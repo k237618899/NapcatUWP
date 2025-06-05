@@ -1,0 +1,12 @@
+﻿<Application
+    x:Class="NapcatUWP.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+
+            <FontFamily x:Key="SetoFontFamily">ms-appx:///Assets/Font.ttf#SetoFont</FontFamily>
+
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
