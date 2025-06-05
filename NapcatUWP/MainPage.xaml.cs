@@ -1,10 +1,10 @@
-﻿using System;
+﻿using NapcatUWP.Controls;
+using System;
 using System.Collections.Specialized;
 using Windows.Foundation;
 using Windows.UI.Popups;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using NapcatUWP.Controls;
 
 // https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x804 上介绍了“空白页”项模板
 
@@ -22,14 +22,19 @@ namespace NapcatUWP
         {
             InitializeComponent();
             InitializeDB();
-            UpdatePageAndSetting();
+
         }
 
         private void UpdatePageAndSetting()
         {
-            ConnectionAddr = _settingsCollection.Get("Server");
-            TextBoxAccount.Text = _settingsCollection.Get("Account");
-            PasswordBoxToken.Password = _settingsCollection.Get("Token");
+            _settingsCollection = DataAccess.GetAllDatas();
+            if (Windows.ApplicationModel.Core.CoreApplication.MainView.CoreWindow.Dispatcher.HasThreadAccess)
+            {
+                ConnectionAddr = _settingsCollection.Get("Server");
+                TextBoxAccount.Text = _settingsCollection.Get("Account") ?? "";
+                PasswordBoxToken.Password = _settingsCollection.Get("Token") ?? "";
+            }
+
         }
         private void InitializeDB()
         {
@@ -37,7 +42,7 @@ namespace NapcatUWP
             {
                 DataAccess.InitializeDatabase();
                 DataAccess.InitInsert();
-                _settingsCollection = DataAccess.GetAllDatas();
+
             });
 
         }
@@ -61,10 +66,23 @@ namespace NapcatUWP
             {
                 Header = "HTTP Server Address"
             };
+            var isWsCheck = new CheckBox()
+            {
+                IsChecked = true,
+                Content = "WebSocket"
+            };
+            isWsCheck.Checked += delegate
+            {
+                if (isWsCheck.IsChecked == true)
+                {
+                    ipAddr.Text = ipAddr.Text.Replace("http", "ws");
+                }
+            };
             if (ConnectionAddr != string.Empty) ipAddr.Text = ConnectionAddr;
 
 
             panel.Children.Add(ipAddr);
+            panel.Children.Add(isWsCheck);
             dialog.Content = panel;
             // Add Buttons
             dialog.PrimaryButtonText = "Save";
@@ -74,6 +92,10 @@ namespace NapcatUWP
                 if (isURL)
                 {
                     ConnectionAddr = ipAddr.Text;
+                    if (isWsCheck.IsChecked == true)
+                    {
+                        ipAddr.Text = ipAddr.Text.Replace("http", "ws");
+                    }
                     btn.Content = "Setting Saved";
                 }
                 else
@@ -102,6 +124,24 @@ namespace NapcatUWP
         {
             var isUri = Uri.IsWellFormedUriString(text, UriKind.Absolute);
             return isUri;
+        }
+
+        private void Page_Loaded(object sender, RoutedEventArgs e)
+        {
+            UpdatePageAndSetting();
+        }
+
+        private void ButtonLogin_Click(object sender, RoutedEventArgs e)
+        {
+
+            Progress_R.IsActive = true;
+            WebSocketStart();
+            this.Frame.Navigate(typeof(MainHubView));
+        }
+
+        private void WebSocketStart()
+        {
+
         }
     }
 }

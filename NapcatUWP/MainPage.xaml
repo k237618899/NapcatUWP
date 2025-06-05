@@ -5,10 +5,12 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    Loaded="Page_Loaded"
     RequestedTheme="Dark"
     mc:Ignorable="d">
 
     <RelativePanel Name="RelativePanelMain" Background="#7e6ca8">
+
         <Button
             Name="SettingBars"
             Click="SettingBars_Click"
@@ -49,6 +51,7 @@
             Name="ButtonLogin"
             Width="200"
             MaxWidth="250"
+            Click="ButtonLogin_Click"
             Content="Login"
             FontFamily="{StaticResource SetoFontFamily}"
             RelativePanel.Above="EmptyBlock"
@@ -57,5 +60,14 @@
             Name="EmptyBlock"
             RelativePanel.AlignBottomWithPanel="True"
             RelativePanel.AlignHorizontalCenterWithPanel="True" />
+       
+            <ProgressRing
+                Name="Progress_R"
+                Width="100"
+                Height="100"
+                RelativePanel.AlignHorizontalCenterWithPanel="True"
+                RelativePanel.AlignVerticalCenterWithPanel="True" />
+
     </RelativePanel>
+
 </Page>
