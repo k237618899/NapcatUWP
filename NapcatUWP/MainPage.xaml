@@ -60,13 +60,14 @@
             Name="EmptyBlock"
             RelativePanel.AlignBottomWithPanel="True"
             RelativePanel.AlignHorizontalCenterWithPanel="True" />
-       
-            <ProgressRing
-                Name="Progress_R"
-                Width="100"
-                Height="100"
-                RelativePanel.AlignHorizontalCenterWithPanel="True"
-                RelativePanel.AlignVerticalCenterWithPanel="True" />
+
+        <ProgressRing
+            Name="Progress_R"
+            Width="100"
+            Height="100"
+            RelativePanel.AlignHorizontalCenterWithPanel="True"
+            RelativePanel.AlignVerticalCenterWithPanel="True" />
+        <Popup />
 
     </RelativePanel>
 

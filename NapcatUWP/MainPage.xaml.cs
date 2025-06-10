@@ -1,10 +1,12 @@
-﻿using NapcatUWP.Controls;
-using System;
+﻿using System;
 using System.Collections.Specialized;
-using Windows.Foundation;
+using System.Threading.Tasks;
+using Windows.ApplicationModel.Core;
+using Windows.System.Threading;
 using Windows.UI.Popups;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using NapcatUWP.Controls;
 
 // https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x804 上介绍了“空白页”项模板
 
@@ -15,37 +17,36 @@ namespace NapcatUWP
     /// </summary>
     public sealed partial class MainPage : Page
     {
-        public string ConnectionAddr = "http://140.83.32.184:3000";
         private NameValueCollection _settingsCollection = new NameValueCollection();
+        public string ConnectionAddr = "http://140.83.32.184:3000";
+        public WebSocketClientStarter SocketClientStarter = new WebSocketClientStarter();
 
         public MainPage()
         {
             InitializeComponent();
             InitializeDB();
-
         }
 
         private void UpdatePageAndSetting()
         {
             _settingsCollection = DataAccess.GetAllDatas();
-            if (Windows.ApplicationModel.Core.CoreApplication.MainView.CoreWindow.Dispatcher.HasThreadAccess)
+            if (CoreApplication.MainView.CoreWindow.Dispatcher.HasThreadAccess)
             {
                 ConnectionAddr = _settingsCollection.Get("Server");
                 TextBoxAccount.Text = _settingsCollection.Get("Account") ?? "";
                 PasswordBoxToken.Password = _settingsCollection.Get("Token") ?? "";
             }
-
         }
+
         private void InitializeDB()
         {
-            IAsyncAction asyncAction = Windows.System.Threading.ThreadPool.RunAsync((workItem) =>
+            var asyncAction = ThreadPool.RunAsync(workItem =>
             {
                 DataAccess.InitializeDatabase();
                 DataAccess.InitInsert();
-
             });
-
         }
+
         /// <summary>
         ///     Handles the Click event of the SettingBars control.
         /// </summary>
@@ -66,17 +67,14 @@ namespace NapcatUWP
             {
                 Header = "HTTP Server Address"
             };
-            var isWsCheck = new CheckBox()
+            var isWsCheck = new CheckBox
             {
                 IsChecked = true,
                 Content = "WebSocket"
             };
             isWsCheck.Checked += delegate
             {
-                if (isWsCheck.IsChecked == true)
-                {
-                    ipAddr.Text = ipAddr.Text.Replace("http", "ws");
-                }
+                if (isWsCheck.IsChecked == true) ipAddr.Text = ipAddr.Text.Replace("http", "ws");
             };
             if (ConnectionAddr != string.Empty) ipAddr.Text = ConnectionAddr;
 
@@ -91,11 +89,9 @@ namespace NapcatUWP
                 var isURL = AddressCheck(ipAddr.Text);
                 if (isURL)
                 {
+                    if (isWsCheck.IsChecked == true) ipAddr.Text = ipAddr.Text.Replace("http", "ws");
                     ConnectionAddr = ipAddr.Text;
-                    if (isWsCheck.IsChecked == true)
-                    {
-                        ipAddr.Text = ipAddr.Text.Replace("http", "ws");
-                    }
+                    DataAccess.UpdateSetting("Server", ConnectionAddr);
                     btn.Content = "Setting Saved";
                 }
                 else
@@ -133,15 +129,17 @@ namespace NapcatUWP
 
         private void ButtonLogin_Click(object sender, RoutedEventArgs e)
         {
-
             Progress_R.IsActive = true;
             WebSocketStart();
-            this.Frame.Navigate(typeof(MainHubView));
         }
 
-        private void WebSocketStart()
+        private async Task WebSocketStart()
         {
-
+            DataAccess.UpdateSetting("Account", TextBoxAccount.Text);
+            DataAccess.UpdateSetting("Token", PasswordBoxToken.Password);
+            SocketClientStarter.WebSocketConnet(ConnectionAddr, PasswordBoxToken.Password);
+            await Task.Delay(2000);
+            Frame.Navigate(typeof(MainHubView));
         }
     }
 }

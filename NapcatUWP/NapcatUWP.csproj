@@ -120,6 +120,7 @@
       <DependentUpon>App.xaml</DependentUpon>
     </Compile>
     <Compile Include="Controls\DataAccess.cs" />
+    <Compile Include="Controls\WebSocketClientStarter.cs" />
     <Compile Include="Pages\MainHubView.xaml.cs">
       <DependentUpon>MainHubView.xaml</DependentUpon>
     </Compile>
@@ -211,12 +212,21 @@
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform">
       <Version>6.2.8</Version>
     </PackageReference>
-    <PackageReference Include="MyPackage">
-      <Version>1.0.0</Version>
+    <PackageReference Include="Newtonsoft.Json">
+      <Version>13.0.3</Version>
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Assets\dbs\" />
+  </ItemGroup>
+  <ItemGroup>
+    <WCFMetadata Include="Connected Services\" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\WebSocket.UAP\WebSocket.UAP.csproj">
+      <Project>{673519cb-70a0-42e6-8129-c3ae9c5604f5}</Project>
+      <Name>WebSocket.UAP</Name>
+    </ProjectReference>
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">
     <VisualStudioVersion>14.0</VisualStudioVersion>

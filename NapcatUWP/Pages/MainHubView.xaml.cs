@@ -6,18 +6,18 @@ using Windows.UI.Xaml.Controls;
 namespace NapcatUWP
 {
     /// <summary>
-    /// An empty page that can be used on its own or navigated to within a Frame.
+    ///     An empty page that can be used on its own or navigated to within a Frame.
     /// </summary>
     public sealed partial class MainHubView : Page
     {
         public MainHubView()
         {
-            this.InitializeComponent();
+            InitializeComponent();
         }
 
         private void BtnLogout_Click(object sender, RoutedEventArgs e)
         {
-            this.Frame.Navigate(typeof(MainPage));
+            Frame.Navigate(typeof(MainPage));
         }
     }
 }
