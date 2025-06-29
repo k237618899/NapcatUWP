@@ -3,10 +3,14 @@ using System.Collections.Specialized;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Core;
 using Windows.System.Threading;
+using Windows.UI;
 using Windows.UI.Popups;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Media;
 using NapcatUWP.Controls;
+using NapcatUWP.Pages;
+using NapcatUWP.Tools;
 
 // https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x804 上介绍了“空白页”项模板
 
@@ -19,7 +23,7 @@ namespace NapcatUWP
     {
         private NameValueCollection _settingsCollection = new NameValueCollection();
         public string ConnectionAddr = "http://140.83.32.184:3000";
-        public WebSocketClientStarter SocketClientStarter = new WebSocketClientStarter();
+        public static WebSocketClientStarter SocketClientStarter = new WebSocketClientStarter();
 
         public MainPage()
         {
@@ -138,8 +142,34 @@ namespace NapcatUWP
             DataAccess.UpdateSetting("Account", TextBoxAccount.Text);
             DataAccess.UpdateSetting("Token", PasswordBoxToken.Password);
             SocketClientStarter.WebSocketConnet(ConnectionAddr, PasswordBoxToken.Password);
-            await Task.Delay(2000);
-            Frame.Navigate(typeof(MainHubView));
+            for (int i = 0; i < 30; i++)
+            {
+                await Task.Delay(1000);
+                if (SocketClientStarter.IsConnected)
+                {
+                    Frame.Navigate(typeof(MainView));
+                    return;
+                }
+            }
+            var dialog = new ContentDialog
+            {
+                Title = "Connected Failed",
+                RequestedTheme = ElementTheme.Dark,
+                //FullSizeDesired = true,
+                MaxWidth = ActualWidth // Required for Mobile!
+            };
+            var panel = new StackPanel();
+            
+            var textBlock = new TextBlock
+            {
+                Text = "Connect to Server "+ConnectionAddr+" failed! Please check the connection and Token!"
+            };
+            panel.Children.Add(textBlock);
+            dialog.Content = panel;
+            // Add Buttons
+            dialog.PrimaryButtonText = "OK";
+            Progress_R.IsActive = false;
+            await dialog.ShowAsync();
         }
     }
 }

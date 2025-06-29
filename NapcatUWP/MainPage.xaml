@@ -65,6 +65,7 @@
             Name="Progress_R"
             Width="100"
             Height="100"
+            Foreground="#7e6ca8"
             RelativePanel.AlignHorizontalCenterWithPanel="True"
             RelativePanel.AlignVerticalCenterWithPanel="True" />
         <Popup />
