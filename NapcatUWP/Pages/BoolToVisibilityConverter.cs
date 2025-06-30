@@ -4,12 +4,18 @@ using Windows.UI.Xaml.Data;
 
 namespace NapcatUWP.Pages
 {
-    public class SidebarWidthToVisibilityConverter : IValueConverter
+    public class BoolToVisibilityConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, string language)
         {
-            if (value is double width) return width > 0 ? Visibility.Visible : Visibility.Collapsed;
-            return Visibility.Collapsed;
+            var boolValue = false;
+
+            if (value is bool) boolValue = (bool)value;
+
+            // 檢查是否要反轉
+            if (parameter != null && parameter.ToString() == "Invert") boolValue = !boolValue;
+
+            return boolValue ? Visibility.Visible : Visibility.Collapsed;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, string language)

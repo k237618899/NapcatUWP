@@ -18,6 +18,7 @@
     <ProjectTypeGuids>{A5A43C5B-DE2A-4C0C-9213-0A381AF9435A};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
     <WindowsXamlEnableOverview>true</WindowsXamlEnableOverview>
     <PackageCertificateKeyFile>NapcatUWP_TemporaryKey.pfx</PackageCertificateKeyFile>
+    <PackageCertificateThumbprint>1184E64C653765B8FEB27DC8E312DDE2FEB9D1E8</PackageCertificateThumbprint>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
     <DebugSymbols>true</DebugSymbols>
@@ -29,6 +30,10 @@
     <UseVSHostingProcess>false</UseVSHostingProcess>
     <ErrorReport>prompt</ErrorReport>
     <Prefer32Bit>true</Prefer32Bit>
+    <DocumentationFile>
+    </DocumentationFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Optimize>false</Optimize>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x86'">
     <OutputPath>bin\x86\Release\</OutputPath>
@@ -121,7 +126,21 @@
     </Compile>
     <Compile Include="Controls\APIHandler\OneBotAPIHandler.cs" />
     <Compile Include="Controls\DataAccess.cs" />
+    <Compile Include="Controls\MessageSegmentControl.xaml.cs">
+      <DependentUpon>MessageSegmentControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\MessageTemplateSelector.cs" />
     <Compile Include="Controls\WebSocketClientStarter.cs" />
+    <Compile Include="Converters\UnreadCountToVisibilityConverter.cs" />
+    <Compile Include="Models\ChatItem.cs" />
+    <Compile Include="Models\ChatMessage.cs" />
+    <Compile Include="Models\FriendCategory.cs" />
+    <Compile Include="Models\FriendInfo.cs" />
+    <Compile Include="Models\GroupInfo.cs" />
+    <Compile Include="Models\GroupMemberInfo.cs" />
+    <Compile Include="Models\MessageSegment.cs" />
+    <Compile Include="Models\RecentContactMessage.cs" />
+    <Compile Include="Pages\BoolToVisibilityConverter.cs" />
     <Compile Include="Pages\MainHubView.xaml.cs">
       <DependentUpon>MainHubView.xaml</DependentUpon>
     </Compile>
@@ -135,6 +154,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Tools\ActionBase.cs" />
     <Compile Include="Tools\JSONTools.cs" />
+    <Compile Include="Tools\MessageSegmentParser.cs" />
     <Compile Include="Tools\ResponseEntity.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -147,7 +167,6 @@
     <Content Include="Assets\BadgeLogo.scale-200.png" />
     <Content Include="Assets\BadgeLogo.scale-400.png" />
     <Content Include="Assets\Font.ttf" />
-    <None Include="NapcatUWP_TemporaryKey.pfx" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Assets\Anna1.png" />
@@ -204,6 +223,10 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Page Include="Controls\MessageSegmentControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Pages\MainHubView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>

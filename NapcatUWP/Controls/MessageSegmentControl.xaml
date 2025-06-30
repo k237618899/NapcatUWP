@@ -1,0 +1,15 @@
+﻿<UserControl
+    x:Class="NapcatUWP.Controls.MessageSegmentControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer 
+        HorizontalScrollBarVisibility="Disabled"
+        VerticalScrollBarVisibility="Disabled"
+        ZoomMode="Disabled">
+        <StackPanel x:Name="ContentPanel" 
+                    Orientation="Vertical">
+            <!-- 消息段將在代碼中動態添加 -->
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

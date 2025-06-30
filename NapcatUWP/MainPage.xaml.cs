@@ -3,14 +3,11 @@ using System.Collections.Specialized;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Core;
 using Windows.System.Threading;
-using Windows.UI;
 using Windows.UI.Popups;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Media;
 using NapcatUWP.Controls;
 using NapcatUWP.Pages;
-using NapcatUWP.Tools;
 
 // https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x804 上介绍了“空白页”项模板
 
@@ -21,9 +18,9 @@ namespace NapcatUWP
     /// </summary>
     public sealed partial class MainPage : Page
     {
+        public static WebSocketClientStarter SocketClientStarter = new WebSocketClientStarter();
         private NameValueCollection _settingsCollection = new NameValueCollection();
         public string ConnectionAddr = "http://140.83.32.184:3000";
-        public static WebSocketClientStarter SocketClientStarter = new WebSocketClientStarter();
 
         public MainPage()
         {
@@ -36,7 +33,10 @@ namespace NapcatUWP
             _settingsCollection = DataAccess.GetAllDatas();
             if (CoreApplication.MainView.CoreWindow.Dispatcher.HasThreadAccess)
             {
-                ConnectionAddr = _settingsCollection.Get("Server");
+                // 確保 ConnectionAddr 不會被設為 null
+                var serverSetting = _settingsCollection.Get("Server");
+                ConnectionAddr = !string.IsNullOrEmpty(serverSetting) ? serverSetting : "http://140.83.32.184:3000";
+
                 TextBoxAccount.Text = _settingsCollection.Get("Account") ?? "";
                 PasswordBoxToken.Password = _settingsCollection.Get("Token") ?? "";
             }
@@ -80,7 +80,7 @@ namespace NapcatUWP
             {
                 if (isWsCheck.IsChecked == true) ipAddr.Text = ipAddr.Text.Replace("http", "ws");
             };
-            if (ConnectionAddr != string.Empty) ipAddr.Text = ConnectionAddr;
+            if (!string.IsNullOrEmpty(ConnectionAddr)) ipAddr.Text = ConnectionAddr;
 
 
             panel.Children.Add(ipAddr);
@@ -142,7 +142,7 @@ namespace NapcatUWP
             DataAccess.UpdateSetting("Account", TextBoxAccount.Text);
             DataAccess.UpdateSetting("Token", PasswordBoxToken.Password);
             SocketClientStarter.WebSocketConnet(ConnectionAddr, PasswordBoxToken.Password);
-            for (int i = 0; i < 30; i++)
+            for (var i = 0; i < 30; i++)
             {
                 await Task.Delay(1000);
                 if (SocketClientStarter.IsConnected)
@@ -151,6 +151,7 @@ namespace NapcatUWP
                     return;
                 }
             }
+
             var dialog = new ContentDialog
             {
                 Title = "Connected Failed",
@@ -159,10 +160,10 @@ namespace NapcatUWP
                 MaxWidth = ActualWidth // Required for Mobile!
             };
             var panel = new StackPanel();
-            
+
             var textBlock = new TextBlock
             {
-                Text = "Connect to Server "+ConnectionAddr+" failed! Please check the connection and Token!"
+                Text = "Connect to Server " + ConnectionAddr + " failed! Please check the connection and Token!"
             };
             panel.Children.Add(textBlock);
             dialog.Content = panel;

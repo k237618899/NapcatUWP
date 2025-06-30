@@ -2,13 +2,16 @@ using System;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Data;
 
-namespace NapcatUWP.Pages
+namespace NapcatUWP.Converters
 {
-    public class SidebarWidthToVisibilityConverter : IValueConverter
+    public class UnreadCountToVisibilityConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, string language)
         {
-            if (value is double width) return width > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (value is int count) return count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            if (value is bool boolValue) return boolValue ? Visibility.Visible : Visibility.Collapsed;
+
             return Visibility.Collapsed;
         }
 

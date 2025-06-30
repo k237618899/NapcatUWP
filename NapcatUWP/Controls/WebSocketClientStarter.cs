@@ -2,29 +2,43 @@
 using System.Diagnostics;
 using System.Text;
 using NapcatUWP.Controls.APIHandler;
+using NapcatUWP.Pages;
 using WebSocket.UAP;
 
 namespace NapcatUWP.Controls
 {
     public class WebSocketClientStarter
     {
+        private readonly OneBotAPIHandler _apiHandler = new OneBotAPIHandler();
         public readonly WebSocket.UAP.WebSocket _socket = new WebSocket.UAP.WebSocket();
-        public bool IsConnected = false;
-        private OneBotAPIHandler _apiHandler = new OneBotAPIHandler();
+        public bool IsConnected;
 
         public WebSocketClientStarter()
         {
             _socket = new WebSocket.UAP.WebSocket();
-            
+
             _socket.Opened += socket_Opened;
             _socket.Closed += socket_Closed;
             _socket.OnPong += socket_OnPong;
             _socket.OnMessage += socket_OnMessage;
             _socket.OnError += socket_OnError;
-            
         }
 
-       
+        // 在 SocketClientStarter 類中添加方法
+        public void RequestGroupMemberInfo(long groupId, long userId)
+        {
+            _apiHandler?.RequestGroupMemberInfo(groupId, userId);
+        }
+
+        /// <summary>
+        ///     設置 MainView 引用給 API 處理器
+        /// </summary>
+        /// <param name="mainView">MainView 實例</param>
+        public void SetMainViewReference(MainView mainView)
+        {
+            _apiHandler.SetMainView(mainView);
+        }
+
 
         public async void WebSocketConnet(string connectionURI, string token)
         {
@@ -34,7 +48,7 @@ namespace NapcatUWP.Controls
 
         private void socket_OnError(object sender, Exception e)
         {
-            Debug.WriteLine("111" + e.Message);
+            Debug.WriteLine("WebSocket Error: " + e.Message);
         }
 
         private void socket_OnMessage(object sender, WebSocketMessageEventArgs e)
@@ -45,7 +59,7 @@ namespace NapcatUWP.Controls
 
         private void socket_OnPong(object sender, byte[] e)
         {
-            Debug.WriteLine("111" + e.Length);
+            Debug.WriteLine("WebSocket Pong: " + e.Length);
         }
 
         private void socket_Closed(IWebSocket sender, WebSocketClosedEventArgs args)
@@ -58,7 +72,6 @@ namespace NapcatUWP.Controls
         {
             IsConnected = true;
             Debug.WriteLine("WebSocket Connected!" + e);
-
         }
     }
 }
