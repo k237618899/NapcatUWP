@@ -15,6 +15,7 @@ using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
+using Windows.UI.Xaml.Navigation;
 using NapcatUWP.Controls;
 using NapcatUWP.Models;
 using NapcatUWP.Tools;
@@ -24,6 +25,10 @@ namespace NapcatUWP.Pages
 {
     public sealed partial class MainView : Page
     {
+        // 添加好友列表緩存字典
+        private readonly Dictionary<long, List<FriendInfo>> _categoryFriendsCache =
+            new Dictionary<long, List<FriendInfo>>();
+
         private readonly ObservableCollection<ChatMessage> _currentMessages;
         private readonly HashSet<string> _loadedHistoryChats;
 
@@ -67,6 +72,9 @@ namespace NapcatUWP.Pages
 
             // 註冊應用程序關閉事件
             RegisterApplicationEvents();
+
+            // 註冊系統返回鍵處理
+            RegisterBackButtonHandler();
         }
 
 
@@ -74,6 +82,129 @@ namespace NapcatUWP.Pages
         public ObservableCollection<GroupInfo> GroupItems { get; set; }
 
         public ObservableCollection<FriendCategory> ContactCategories { get; set; }
+
+        /// <summary>
+        ///     註冊系統返回鍵處理事件
+        /// </summary>
+        private void RegisterBackButtonHandler()
+        {
+            try
+            {
+                // 註冊硬體返回鍵事件處理
+                SystemNavigationManager.GetForCurrentView().BackRequested += OnBackRequested;
+
+                // 確保應用程序可以處理返回鍵事件
+                SystemNavigationManager.GetForCurrentView().AppViewBackButtonVisibility =
+                    AppViewBackButtonVisibility.Visible;
+
+                Debug.WriteLine("系統返回鍵事件處理已註冊");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"註冊系統返回鍵處理時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     頁面導航到此頁面時調用
+        /// </summary>
+        protected override void OnNavigatedTo(NavigationEventArgs e)
+        {
+            base.OnNavigatedTo(e);
+
+            // 確保返回鍵處理程序已註冊
+            RegisterBackButtonHandler();
+        }
+
+        /// <summary>
+        ///     頁面離開時調用
+        /// </summary>
+        protected override void OnNavigatedFrom(NavigationEventArgs e)
+        {
+            base.OnNavigatedFrom(e);
+
+            // 取消註冊返回鍵處理程序
+            try
+            {
+                SystemNavigationManager.GetForCurrentView().BackRequested -= OnBackRequested;
+                Debug.WriteLine("系統返回鍵事件處理已取消註冊");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"取消註冊系統返回鍵處理時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     處理系統返回鍵事件
+        /// </summary>
+        private void OnBackRequested(object sender, BackRequestedEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine($"系統返回鍵被按下 - 當前頁面: {_currentPage}, 側邊欄狀態: {(_sidebarOpen ? "開啟" : "關閉")}");
+
+                // 如果側邊欄開啟，先關閉側邊欄
+                if (_sidebarOpen)
+                {
+                    SidebarColumn.Width = new GridLength(0);
+                    _sidebarOpen = false;
+                    UpdateOverlay();
+                    e.Handled = true; // 阻止默認的返回行為
+                    Debug.WriteLine("已關閉側邊欄");
+                    return;
+                }
+
+                // 如果在聊天界面，返回到聊天列表
+                if (_currentPage == "Chat" && ChatInterfaceGrid.Visibility == Visibility.Visible)
+                {
+                    // 執行與 BackButton_Click 相同的邏輯
+                    ChatInterfaceGrid.Visibility = Visibility.Collapsed;
+                    ChatListView.SelectedItem = null;
+                    SwitchPage("Chats");
+
+                    e.Handled = true; // 阻止默認的返回行為
+                    Debug.WriteLine("已從聊天界面返回到聊天列表");
+                    return;
+                }
+
+                // 如果在其他頁面（聯繫人、群組、設置），返回到聊天列表
+                if (_currentPage != "Chats")
+                {
+                    SwitchPage("Chats");
+                    e.Handled = true; // 阻止默認的返回行為
+                    Debug.WriteLine($"已從 {_currentPage} 頁面返回到聊天列表");
+                    return;
+                }
+
+                // 如果已經在聊天列表頁面，不處理返回鍵，讓系統處理（退出應用或返回上一頁面）
+                Debug.WriteLine("已在聊天列表頁面，使用系統默認返回行為");
+                // e.Handled = false; // 讓系統處理返回事件
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"處理系統返回鍵時發生錯誤: {ex.Message}");
+                // 發生錯誤時不阻止系統默認行為
+            }
+        }
+
+        /// <summary>
+        ///     檢查是否可以處理返回事件
+        /// </summary>
+        public bool CanGoBack()
+        {
+            // 如果側邊欄開啟，可以關閉側邊欄
+            if (_sidebarOpen) return true;
+
+            // 如果在聊天界面，可以返回聊天列表
+            if (_currentPage == "Chat" && ChatInterfaceGrid.Visibility == Visibility.Visible) return true;
+
+            // 如果不在聊天列表頁面，可以返回聊天列表
+            if (_currentPage != "Chats") return true;
+
+            // 其他情況不處理
+            return false;
+        }
 
         /// <summary>
         ///     載入緩存的聊天列表
@@ -460,6 +591,9 @@ namespace NapcatUWP.Pages
 
             // 更新當前頁面狀態
             _currentPage = "Chat";
+
+            // 更新系統返回鍵可見性
+            UpdateBackButtonVisibility();
         }
 
         // 返回按鈕點擊事件
@@ -489,6 +623,116 @@ namespace NapcatUWP.Pages
                 SendMessage();
                 e.Handled = true;
             }
+        }
+
+        /// <summary>
+        ///     更新聊天列表中的群组信息
+        /// </summary>
+        public void UpdateGroupInfoInChatList()
+        {
+            try
+            {
+                var allGroups = DataAccess.GetAllGroups();
+                var hasUpdates = false;
+
+                foreach (var chatItem in ChatItems.ToList())
+                    if (chatItem.IsGroup)
+                    {
+                        var group = allGroups.FirstOrDefault(g => g.GroupId == chatItem.ChatId);
+                        if (group != null)
+                        {
+                            // 检查群组名是否需要更新
+                            var newGroupName = !string.IsNullOrEmpty(group.GroupRemark)
+                                ? group.GroupRemark
+                                : group.GroupName;
+
+                            if (chatItem.Name != newGroupName)
+                            {
+                                Debug.WriteLine($"更新群组名: {chatItem.Name} -> {newGroupName}");
+                                chatItem.Name = newGroupName;
+                                hasUpdates = true;
+                            }
+
+                            // 更新成员数量
+                            if (chatItem.MemberCount != group.MemberCount)
+                            {
+                                Debug.WriteLine($"更新群组成员数: {chatItem.MemberCount} -> {group.MemberCount}");
+                                chatItem.MemberCount = group.MemberCount;
+                                hasUpdates = true;
+                            }
+                        }
+                    }
+
+                if (hasUpdates)
+                {
+                    Debug.WriteLine("群组信息已更新，保存聊天列表缓存");
+                    SaveChatListCache();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"更新群组信息时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     更新聊天列表中的好友信息
+        /// </summary>
+        public void UpdateFriendInfoInChatList()
+        {
+            try
+            {
+                var allFriendCategories = DataAccess.GetAllFriendsWithCategories();
+                var hasUpdates = false;
+
+                foreach (var chatItem in ChatItems.ToList())
+                    if (!chatItem.IsGroup)
+                    {
+                        FriendInfo friend = null;
+
+                        // 查找好友信息
+                        foreach (var category in allFriendCategories)
+                            if (category.BuddyList != null)
+                            {
+                                friend = category.BuddyList.FirstOrDefault(f => f.UserId == chatItem.ChatId);
+                                if (friend != null) break;
+                            }
+
+                        if (friend != null)
+                        {
+                            // 确定显示名称（备注 > 昵称 > 原始昵称）
+                            var newFriendName = !string.IsNullOrEmpty(friend.Remark) ? friend.Remark :
+                                !string.IsNullOrEmpty(friend.Nickname) ? friend.Nickname :
+                                friend.Nick;
+
+                            if (!string.IsNullOrEmpty(newFriendName) && chatItem.Name != newFriendName)
+                            {
+                                Debug.WriteLine($"更新好友名: {chatItem.Name} -> {newFriendName}");
+                                chatItem.Name = newFriendName;
+                                hasUpdates = true;
+                            }
+                        }
+                    }
+
+                if (hasUpdates)
+                {
+                    Debug.WriteLine("好友信息已更新，保存聊天列表缓存");
+                    SaveChatListCache();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"更新好友信息时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     刷新聊天列表中所有联系人信息
+        /// </summary>
+        public void RefreshChatListContactInfo()
+        {
+            UpdateGroupInfoInChatList();
+            UpdateFriendInfoInChatList();
         }
 
         // 修改 SendMessage 方法 - 不要立即添加到UI，等服務器確認
@@ -846,18 +1090,427 @@ namespace NapcatUWP.Pages
         {
             try
             {
-                // 直接在 UI 線程上調用（如果數據量不大）
-                var friendCategories = DataAccess.GetAllFriendsWithCategories();
-                ContactCategories = new ObservableCollection<FriendCategory>(friendCategories);
-                BuildContactsUI();
-
+                // 首先快速加載群組數據
                 var groups = DataAccess.GetAllGroups();
                 GroupItems = new ObservableCollection<GroupInfo>(groups);
                 GroupListView.ItemsSource = GroupItems;
+
+                // 異步加載聯繫人數據，提升響應速度
+                LoadContactsAsync();
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"加載聯繫人和群組數據時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     異步加載聯繫人數據，先顯示分組標題，再懶加載好友列表
+        /// </summary>
+        private async void LoadContactsAsync()
+        {
+            try
+            {
+                Debug.WriteLine("開始異步加載聯繫人數據");
+
+                // 在後台線程獲取分類數據
+                var friendCategories = await Task.Run(() => DataAccess.GetAllFriendsWithCategories());
+
+                // 初始化分類，但設置為折疊狀態且暫時不加載好友列表
+                ContactCategories = new ObservableCollection<FriendCategory>();
+
+                foreach (var category in friendCategories)
+                {
+                    // 創建分類的副本，但暫時清空好友列表以提升響應速度
+                    var categoryHeader = new FriendCategory
+                    {
+                        CategoryId = category.CategoryId,
+                        CategorySortId = category.CategorySortId,
+                        CategoryName = category.CategoryName,
+                        CategoryMbCount = category.CategoryMbCount,
+                        OnlineCount = category.OnlineCount,
+                        IsExpanded = false, // 初始設置為折疊
+                        BuddyList = null // 暫時不加載好友列表
+                    };
+
+                    // 保存原始好友列表到一個字典中，供後續懶加載使用
+                    if (!_categoryFriendsCache.ContainsKey(category.CategoryId))
+                        _categoryFriendsCache[category.CategoryId] = category.BuddyList ?? new List<FriendInfo>();
+
+                    ContactCategories.Add(categoryHeader);
+                }
+
+                // 快速構建初始UI（只顯示折疊的分組標題）
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () => { BuildContactsUIFast(); });
+
+                Debug.WriteLine($"聯繫人分組初始化完成，共 {ContactCategories.Count} 個分組");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"異步加載聯繫人數據時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     快速構建聯繫人UI（僅顯示分組標題）
+        /// </summary>
+        private void BuildContactsUIFast()
+        {
+            ContactsStackPanel.Children.Clear();
+
+            Debug.WriteLine($"BuildContactsUIFast: 快速構建界面，共有 {ContactCategories?.Count ?? 0} 個分類");
+
+            if (ContactCategories == null) return;
+
+            foreach (var category in ContactCategories)
+            {
+                Debug.WriteLine($"BuildContactsUIFast: 處理分類 {category.CategoryName}");
+
+                // 創建分類標題
+                var categoryHeader = CreateCategoryHeader(category);
+                ContactsStackPanel.Children.Add(categoryHeader);
+
+                // 如果分類是展開的，則顯示好友列表（懶加載）
+                if (category.IsExpanded)
+                {
+                    var _ = LoadCategoryFriendsAsync(category); // 避免 async void 警告
+                }
+            }
+
+            Debug.WriteLine($"BuildContactsUIFast: 快速界面構建完成，總共添加了 {ContactsStackPanel.Children.Count} 個分組標題");
+        }
+
+        /// <summary>
+        ///     創建分類標題控件
+        /// </summary>
+        private Grid CreateCategoryHeader(FriendCategory category)
+        {
+            var categoryHeader = new Grid
+            {
+                Height = 40,
+                Background = new SolidColorBrush(Color.FromArgb(255, 45, 62, 80)),
+                Margin = new Thickness(0, 0, 0, 1),
+                Tag = category // 保存分類引用
+            };
+
+            // 添加點擊事件
+            categoryHeader.Tapped += CategoryHeader_Tapped_Optimized;
+
+            var headerStackPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+
+            // 展開/收起圖標
+            var expandIcon = new FontIcon
+            {
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                Glyph = category.IsExpanded ? "\uE70D" : "\uE70E", // 向下箭頭：展開，向右箭頭：收起
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Colors.White),
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // 獲取好友數量（從緩存中獲取以避免重複查詢）
+            var friendCount = _categoryFriendsCache.ContainsKey(category.CategoryId)
+                ? _categoryFriendsCache[category.CategoryId].Count
+                : category.CategoryMbCount;
+
+            var headerText = new TextBlock
+            {
+                Text = $"{category.CategoryName} ({friendCount})",
+                Foreground = new SolidColorBrush(Colors.White),
+                FontWeight = FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            headerStackPanel.Children.Add(expandIcon);
+            headerStackPanel.Children.Add(headerText);
+            categoryHeader.Children.Add(headerStackPanel);
+
+            return categoryHeader;
+        }
+
+        /// <summary>
+        ///     優化的分類標題點擊事件處理
+        /// </summary>
+        private async void CategoryHeader_Tapped_Optimized(object sender, TappedRoutedEventArgs e)
+        {
+            if (sender is Grid grid && grid.Tag is FriendCategory category)
+            {
+                Debug.WriteLine($"點擊分類 {category.CategoryName}，當前狀態：{(category.IsExpanded ? "展開" : "折疊")}");
+
+                // 切換展開狀態
+                category.IsExpanded = !category.IsExpanded;
+
+                // 更新圖標
+                var headerStackPanel = grid.Children.OfType<StackPanel>().FirstOrDefault();
+                var expandIcon = headerStackPanel?.Children.OfType<FontIcon>().FirstOrDefault();
+                if (expandIcon != null)
+                    expandIcon.Glyph = category.IsExpanded ? "\uE70D" : "\uE70E";
+
+                if (category.IsExpanded)
+                    // 展開：異步加載並顯示好友列表
+                    await LoadCategoryFriendsAsync(category);
+                else
+                    // 折疊：移除好友列表UI
+                    RemoveCategoryFriendsUI(category);
+
+                Debug.WriteLine($"分類 {category.CategoryName} 切換為 {(category.IsExpanded ? "展開" : "收起")}");
+            }
+        }
+
+        /// <summary>
+        ///     異步加載指定分類的好友列表
+        /// </summary>
+        private async Task LoadCategoryFriendsAsync(FriendCategory category)
+        {
+            try
+            {
+                Debug.WriteLine($"開始異步加載分類 {category.CategoryName} 的好友列表");
+
+                // 如果好友列表還沒有加載，從緩存中獲取
+                if (category.BuddyList == null || category.BuddyList.Count == 0)
+                {
+                    if (_categoryFriendsCache.ContainsKey(category.CategoryId))
+                    {
+                        category.BuddyList = _categoryFriendsCache[category.CategoryId];
+                        Debug.WriteLine($"從緩存中加載分類 {category.CategoryName} 的 {category.BuddyList.Count} 個好友");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"分類 {category.CategoryName} 沒有找到緩存的好友列表");
+                        return;
+                    }
+                }
+
+                // 在UI線程中添加好友項目
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () => { AddCategoryFriendsToUI(category); });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"異步加載分類好友列表時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     將分類的好友添加到UI中
+        /// </summary>
+        private void AddCategoryFriendsToUI(FriendCategory category)
+        {
+            try
+            {
+                if (category.BuddyList == null || category.BuddyList.Count == 0)
+                {
+                    Debug.WriteLine($"分類 {category.CategoryName} 沒有好友需要顯示");
+                    return;
+                }
+
+                // 找到分類標題在UI中的位置
+                var categoryHeaderIndex = -1;
+                for (var i = 0; i < ContactsStackPanel.Children.Count; i++)
+                    if (ContactsStackPanel.Children[i] is Grid grid &&
+                        grid.Tag is FriendCategory cat &&
+                        cat.CategoryId == category.CategoryId)
+                    {
+                        categoryHeaderIndex = i;
+                        break;
+                    }
+
+                if (categoryHeaderIndex == -1)
+                {
+                    Debug.WriteLine($"無法找到分類 {category.CategoryName} 的標題位置");
+                    return;
+                }
+
+                // 在分類標題後面插入好友項目
+                var insertIndex = categoryHeaderIndex + 1;
+                foreach (var friend in category.BuddyList)
+                {
+                    var friendItem = CreateFriendItem(friend);
+                    ContactsStackPanel.Children.Insert(insertIndex, friendItem);
+                    insertIndex++;
+                }
+
+                Debug.WriteLine($"成功將 {category.BuddyList.Count} 個好友添加到分類 {category.CategoryName} 下");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"添加分類好友到UI時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     移除分類的好友UI項目
+        /// </summary>
+        private void RemoveCategoryFriendsUI(FriendCategory category)
+        {
+            try
+            {
+                if (category.BuddyList == null || category.BuddyList.Count == 0)
+                    return;
+
+                // 找到分類標題在UI中的位置
+                var categoryHeaderIndex = -1;
+                for (var i = 0; i < ContactsStackPanel.Children.Count; i++)
+                    if (ContactsStackPanel.Children[i] is Grid grid &&
+                        grid.Tag is FriendCategory cat &&
+                        cat.CategoryId == category.CategoryId)
+                    {
+                        categoryHeaderIndex = i;
+                        break;
+                    }
+
+                if (categoryHeaderIndex == -1)
+                {
+                    Debug.WriteLine($"無法找到分類 {category.CategoryName} 的標題位置");
+                    return;
+                }
+
+                // 移除該分類下的所有好友項目
+                var friendsToRemove = new List<UIElement>();
+                for (var i = categoryHeaderIndex + 1; i < ContactsStackPanel.Children.Count; i++)
+                {
+                    var element = ContactsStackPanel.Children[i];
+
+                    // 如果遇到下一個分類標題，停止移除
+                    if (element is Grid grid && grid.Tag is FriendCategory)
+                        break;
+
+                    friendsToRemove.Add(element);
+                }
+
+                // 從UI中移除好友項目
+                foreach (var friendItem in friendsToRemove)
+                    ContactsStackPanel.Children.Remove(friendItem);
+
+                Debug.WriteLine($"成功移除分類 {category.CategoryName} 下的 {friendsToRemove.Count} 個好友項目");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"移除分類好友UI時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     優化的搜索過濾方法
+        /// </summary>
+        private async void FilterContactsList(string searchText)
+        {
+            try
+            {
+                // 清空當前UI
+                ContactsStackPanel.Children.Clear();
+
+                if (string.IsNullOrEmpty(searchText))
+                {
+                    // 如果搜索為空，重新構建快速UI
+                    BuildContactsUIFast();
+                    return;
+                }
+
+                Debug.WriteLine($"開始搜索聯繫人: {searchText}");
+
+                // 在後台線程進行搜索
+                await Task.Run(async () =>
+                {
+                    var filteredCategories = new List<FilteredCategoryResult>();
+
+                    foreach (var category in ContactCategories)
+                    {
+                        List<FriendInfo> friendsToSearch;
+
+                        // 從緩存中獲取好友列表
+                        if (_categoryFriendsCache.ContainsKey(category.CategoryId))
+                            friendsToSearch = _categoryFriendsCache[category.CategoryId];
+                        else
+                            friendsToSearch = new List<FriendInfo>();
+
+                        var filteredFriends = friendsToSearch.Where(friend =>
+                                (!string.IsNullOrEmpty(friend.Remark) &&
+                                 friend.Remark.ToLower().Contains(searchText)) ||
+                                (!string.IsNullOrEmpty(friend.Nickname) &&
+                                 friend.Nickname.ToLower().Contains(searchText)) ||
+                                (!string.IsNullOrEmpty(friend.Nick) && friend.Nick.ToLower().Contains(searchText)) ||
+                                friend.UserId.ToString().Contains(searchText) // 添加按 QQ號 搜索
+                        ).ToList();
+
+                        if (filteredFriends.Any())
+                            filteredCategories.Add(new FilteredCategoryResult
+                            {
+                                Category = category,
+                                FilteredFriends = filteredFriends
+                            });
+                    }
+
+                    // 在UI線程中顯示搜索結果
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                        CoreDispatcherPriority.Normal, () =>
+                        {
+                            foreach (var result in filteredCategories)
+                            {
+                                var category = result.Category;
+                                var filteredFriends = result.FilteredFriends;
+
+                                // 創建分類標題 - 搜索時總是展開
+                                var categoryHeader = new Grid
+                                {
+                                    Height = 40,
+                                    Background = new SolidColorBrush(Color.FromArgb(255, 45, 62, 80)),
+                                    Margin = new Thickness(0, 0, 0, 1),
+                                    Tag = category
+                                };
+
+                                var headerStackPanel = new StackPanel
+                                {
+                                    Orientation = Orientation.Horizontal,
+                                    VerticalAlignment = VerticalAlignment.Center,
+                                    Margin = new Thickness(8, 0, 0, 0)
+                                };
+
+                                var expandIcon = new FontIcon
+                                {
+                                    FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                                    Glyph = "\uE70D", // 搜索時總是顯示為展開
+                                    FontSize = 12,
+                                    Foreground = new SolidColorBrush(Colors.White),
+                                    Margin = new Thickness(0, 0, 8, 0),
+                                    VerticalAlignment = VerticalAlignment.Center
+                                };
+
+                                var headerText = new TextBlock
+                                {
+                                    Text = $"{category.CategoryName} ({filteredFriends.Count})",
+                                    Foreground = new SolidColorBrush(Colors.White),
+                                    FontWeight = FontWeights.Bold,
+                                    VerticalAlignment = VerticalAlignment.Center
+                                };
+
+                                headerStackPanel.Children.Add(expandIcon);
+                                headerStackPanel.Children.Add(headerText);
+                                categoryHeader.Children.Add(headerStackPanel);
+                                ContactsStackPanel.Children.Add(categoryHeader);
+
+                                // 添加過濾後的好友
+                                foreach (var friend in filteredFriends)
+                                {
+                                    var friendItem = CreateFriendItem(friend);
+                                    ContactsStackPanel.Children.Add(friendItem);
+                                }
+                            }
+                        });
+                });
+
+                Debug.WriteLine($"搜索完成，找到匹配的分類數: {ContactsStackPanel.Children.Count}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"搜索聯繫人時發生錯誤: {ex.Message}");
             }
         }
 
@@ -1016,72 +1669,6 @@ namespace NapcatUWP.Pages
             return grid;
         }
 
-        private void FilterContactsList(string searchText)
-        {
-            ContactsStackPanel.Children.Clear();
-
-            foreach (var category in ContactCategories)
-            {
-                var filteredFriends = string.IsNullOrEmpty(searchText)
-                    ? category.BuddyList
-                    : category.BuddyList?.Where(friend =>
-                            (!string.IsNullOrEmpty(friend.Remark) && friend.Remark.ToLower().Contains(searchText)) ||
-                            (!string.IsNullOrEmpty(friend.Nickname) &&
-                             friend.Nickname.ToLower().Contains(searchText)) ||
-                            (!string.IsNullOrEmpty(friend.Nick) && friend.Nick.ToLower().Contains(searchText)) ||
-                            friend.UserId.ToString().Contains(searchText) // 添加按 QQ號 搜索
-                    ).ToList();
-
-                if (filteredFriends?.Any() == true)
-                {
-                    // 創建分類標題 - 搜索時總是展開
-                    var categoryHeader = new Grid
-                    {
-                        Height = 40,
-                        Background = new SolidColorBrush(Color.FromArgb(255, 45, 62, 80)),
-                        Margin = new Thickness(0, 0, 0, 1),
-                        Tag = category
-                    };
-
-                    var headerStackPanel = new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(8, 0, 0, 0)
-                    };
-
-                    var expandIcon = new FontIcon
-                    {
-                        FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                        Glyph = "\uE70D", // 搜索時總是顯示為展開
-                        FontSize = 12,
-                        Foreground = new SolidColorBrush(Colors.White),
-                        Margin = new Thickness(0, 0, 8, 0),
-                        VerticalAlignment = VerticalAlignment.Center
-                    };
-
-                    var headerText = new TextBlock
-                    {
-                        Text = $"{category.CategoryName} ({filteredFriends.Count})",
-                        Foreground = new SolidColorBrush(Colors.White),
-                        FontWeight = FontWeights.Bold,
-                        VerticalAlignment = VerticalAlignment.Center
-                    };
-
-                    headerStackPanel.Children.Add(expandIcon);
-                    headerStackPanel.Children.Add(headerText);
-                    categoryHeader.Children.Add(headerStackPanel);
-                    ContactsStackPanel.Children.Add(categoryHeader);
-
-                    // 添加過濾後的好友
-                    foreach (var friend in filteredFriends)
-                    {
-                        var friendItem = CreateFriendItem(friend);
-                        ContactsStackPanel.Children.Add(friendItem);
-                    }
-                }
-            }
-        }
 
         private void SwitchPage(string pageName)
         {
@@ -1114,6 +1701,30 @@ namespace NapcatUWP.Pages
                     SettingsGrid.Visibility = Visibility.Visible;
                     SearchTextBox.PlaceholderText = "Search (Settings)";
                     break;
+            }
+
+            // 更新系統返回鍵可見性
+            UpdateBackButtonVisibility();
+        }
+
+        /// <summary>
+        ///     更新系統返回鍵的可見性
+        /// </summary>
+        private void UpdateBackButtonVisibility()
+        {
+            try
+            {
+                // 根據當前狀態決定是否顯示返回鍵
+                var shouldShowBackButton = CanGoBack();
+
+                SystemNavigationManager.GetForCurrentView().AppViewBackButtonVisibility =
+                    shouldShowBackButton ? AppViewBackButtonVisibility.Visible : AppViewBackButtonVisibility.Collapsed;
+
+                Debug.WriteLine($"返回鍵可見性已更新: {(shouldShowBackButton ? "顯示" : "隱藏")}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"更新返回鍵可見性時發生錯誤: {ex.Message}");
             }
         }
 
@@ -1175,6 +1786,15 @@ namespace NapcatUWP.Pages
         }
 
         #endregion
+
+        /// <summary>
+        ///     定義過濾結果類別（替代元組）
+        /// </summary>
+        private class FilteredCategoryResult
+        {
+            public FriendCategory Category { get; set; }
+            public List<FriendInfo> FilteredFriends { get; set; }
+        }
 
         #region 聊天列表更新方法（修復群組和私聊識別）
 
@@ -1328,6 +1948,9 @@ namespace NapcatUWP.Pages
                 SidebarColumn.Width = new GridLength(280);
             _sidebarOpen = !_sidebarOpen;
             UpdateOverlay();
+
+            // 更新返回鍵可見性
+            UpdateBackButtonVisibility();
         }
 
         private void OverlayRect_PointerPressed(object sender, PointerRoutedEventArgs e)
@@ -1337,6 +1960,9 @@ namespace NapcatUWP.Pages
                 SidebarColumn.Width = new GridLength(0);
                 _sidebarOpen = false;
                 UpdateOverlay();
+
+                // 更新返回鍵可見性
+                UpdateBackButtonVisibility();
             }
         }
 

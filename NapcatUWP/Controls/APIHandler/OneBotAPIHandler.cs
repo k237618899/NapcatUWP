@@ -249,6 +249,93 @@ namespace NapcatUWP.Controls.APIHandler
         }
 
         /// <summary>
+        ///     处理群组列表响应 - 现在使用 JToken
+        /// </summary>
+        private void GroupListHandler(ResponseEntity response)
+        {
+            try
+            {
+                Debug.WriteLine("OneBotAPIHandler: 开始处理群组列表响应");
+
+                if (response.Status == "ok" && response.Data != null)
+                {
+                    var groups = new List<GroupInfo>();
+
+                    try
+                    {
+                        Debug.WriteLine($"OneBotAPIHandler: 群组数据类型: {response.Data.Type}");
+
+                        if (response.Data.Type == JTokenType.Array)
+                            foreach (var groupToken in response.Data)
+                                try
+                                {
+                                    var group = new GroupInfo
+                                    {
+                                        GroupId = groupToken.Value<long>("group_id"),
+                                        GroupName = groupToken.Value<string>("group_name") ?? "",
+                                        GroupRemark = groupToken.Value<string>("group_remark") ?? "",
+                                        MemberCount = groupToken.Value<int>("member_count"),
+                                        MaxMemberCount = groupToken.Value<int>("max_member_count"),
+                                        GroupAllShut = groupToken.Value<bool>("group_all_shut")
+                                    };
+                                    groups.Add(group);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine($"OneBotAPIHandler: 解析单个群组时发生错误: {ex.Message}");
+                                }
+                        else
+                            Debug.WriteLine($"OneBotAPIHandler: 群组数据不是数组类型: {response.Data.Type}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"OneBotAPIHandler: 解析群组数据时发生错误: {ex.Message}");
+                    }
+
+                    // 保存到数据库
+                    Task.Run(async () =>
+                    {
+                        DataAccess.SaveGroups(groups);
+                        Debug.WriteLine($"OneBotAPIHandler: 成功处理并保存 {groups.Count} 个群组");
+
+                        // 新增：更新聊天列表中的群组信息
+                        await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                            CoreDispatcherPriority.Normal, () =>
+                            {
+                                _mainView?.UpdateGroupInfoInChatList();
+                                Debug.WriteLine("已触发聊天列表群组信息更新");
+                            });
+                    });
+                }
+                else
+                {
+                    Debug.WriteLine($"OneBotAPIHandler: 群组列表请求失败 - Status: {response.Status}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"OneBotAPIHandler: 处理群组列表响应时发生错误: {ex.Message}");
+            }
+        }
+
+
+        /// <summary>
+        ///     定期刷新群组和好友列表（可选）
+        /// </summary>
+        public async void RefreshGroupAndFriendListPeriodically()
+        {
+            try
+            {
+                Debug.WriteLine("OneBotAPIHandler: 定期刷新群组和好友列表");
+                RequestGroupAndFriendList();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"OneBotAPIHandler: 定期刷新时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         ///     處理聊天歷史消息響應
         /// </summary>
         private void HandleChatHistoryResponse(ResponseEntity response, long chatId, bool isGroup)
@@ -1050,76 +1137,15 @@ namespace NapcatUWP.Controls.APIHandler
             return content.PlainText;
         }
 
-        /// <summary>
-        ///     處理群組列表響應 - 現在使用 JToken
-        /// </summary>
-        private void GroupListHandler(ResponseEntity response)
-        {
-            try
-            {
-                Debug.WriteLine("OneBotAPIHandler: 開始處理群組列表響應");
-
-                if (response.Status == "ok" && response.Data != null)
-                {
-                    var groups = new List<GroupInfo>();
-
-                    try
-                    {
-                        Debug.WriteLine($"OneBotAPIHandler: 群組數據類型: {response.Data.Type}");
-
-                        if (response.Data.Type == JTokenType.Array)
-                            foreach (var groupToken in response.Data)
-                                try
-                                {
-                                    var group = new GroupInfo
-                                    {
-                                        GroupId = groupToken.Value<long>("group_id"),
-                                        GroupName = groupToken.Value<string>("group_name") ?? "",
-                                        GroupRemark = groupToken.Value<string>("group_remark") ?? "",
-                                        MemberCount = groupToken.Value<int>("member_count"),
-                                        MaxMemberCount = groupToken.Value<int>("max_member_count"),
-                                        GroupAllShut = groupToken.Value<bool>("group_all_shut")
-                                    };
-                                    groups.Add(group);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Debug.WriteLine($"OneBotAPIHandler: 解析單個群組時發生錯誤: {ex.Message}");
-                                }
-                        else
-                            Debug.WriteLine($"OneBotAPIHandler: 群組數據不是數組類型: {response.Data.Type}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"OneBotAPIHandler: 解析群組數據時發生錯誤: {ex.Message}");
-                    }
-
-                    // 保存到數據庫
-                    Task.Run(() =>
-                    {
-                        DataAccess.SaveGroups(groups);
-                        Debug.WriteLine($"OneBotAPIHandler: 成功處理並保存 {groups.Count} 個群組");
-                    });
-                }
-                else
-                {
-                    Debug.WriteLine($"OneBotAPIHandler: 群組列表請求失敗 - Status: {response.Status}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"OneBotAPIHandler: 處理群組列表響應時發生錯誤: {ex.Message}");
-            }
-        }
 
         /// <summary>
-        ///     處理好友列表響應 - 現在使用 JToken
+        ///     处理好友列表响应 - 现在使用 JToken
         /// </summary>
         private void FriendsWithCategoryHandler(ResponseEntity response)
         {
             try
             {
-                Debug.WriteLine("OneBotAPIHandler: 開始處理好友列表響應");
+                Debug.WriteLine("OneBotAPIHandler: 开始处理好友列表响应");
 
                 if (response.Status == "ok" && response.Data != null)
                 {
@@ -1127,7 +1153,7 @@ namespace NapcatUWP.Controls.APIHandler
 
                     try
                     {
-                        Debug.WriteLine($"OneBotAPIHandler: 好友數據類型: {response.Data.Type}");
+                        Debug.WriteLine($"OneBotAPIHandler: 好友数据类型: {response.Data.Type}");
 
                         if (response.Data.Type == JTokenType.Array)
                             foreach (var categoryToken in response.Data)
@@ -1143,9 +1169,9 @@ namespace NapcatUWP.Controls.APIHandler
                                         BuddyList = new List<FriendInfo>()
                                     };
 
-                                    Debug.WriteLine($"處理分類: {category.CategoryName}, ID: {category.CategoryId}");
+                                    Debug.WriteLine($"处理分类: {category.CategoryName}, ID: {category.CategoryId}");
 
-                                    // 解析該分類下的好友列表
+                                    // 解析该分类下的好友列表
                                     var buddyListToken = categoryToken["buddyList"];
                                     if (buddyListToken != null && buddyListToken.Type == JTokenType.Array)
                                     {
@@ -1155,7 +1181,7 @@ namespace NapcatUWP.Controls.APIHandler
                                             {
                                                 var friend = new FriendInfo
                                                 {
-                                                    // 使用正確的字段名
+                                                    // 使用正确的字段名
                                                     UserId = buddyToken.Value<long>("user_id"),
                                                     BirthdayYear = buddyToken.Value<int>("birthday_year"),
                                                     BirthdayMonth = buddyToken.Value<int>("birthday_month"),
@@ -1169,7 +1195,7 @@ namespace NapcatUWP.Controls.APIHandler
                                                     Remark = buddyToken.Value<string>("remark") ?? "",
                                                     Level = buddyToken.Value<int>("level"),
 
-                                                    // 這些字段在新的 API 響應中不存在，設置為默認值
+                                                    // 这些字段在新的 API 响应中不存在，设置为默认值
                                                     Qid = "",
                                                     LongNick = "",
                                                     RichTime = 0,
@@ -1186,52 +1212,58 @@ namespace NapcatUWP.Controls.APIHandler
                                             }
                                             catch (Exception ex)
                                             {
-                                                Debug.WriteLine($"OneBotAPIHandler: 解析單個好友時發生錯誤: {ex.Message}");
-                                                Debug.WriteLine($"好友數據: {buddyToken}");
+                                                Debug.WriteLine($"OneBotAPIHandler: 解析单个好友时发生错误: {ex.Message}");
+                                                Debug.WriteLine($"好友数据: {buddyToken}");
                                             }
 
-                                        Debug.WriteLine($"分類 {category.CategoryName} 解析了 {friendCount} 個好友");
+                                        Debug.WriteLine($"分类 {category.CategoryName} 解析了 {friendCount} 个好友");
                                     }
 
                                     categories.Add(category);
                                 }
                                 catch (Exception ex)
                                 {
-                                    Debug.WriteLine($"OneBotAPIHandler: 解析單個分類時發生錯誤: {ex.Message}");
+                                    Debug.WriteLine($"OneBotAPIHandler: 解析单个分类时发生错误: {ex.Message}");
                                 }
                         else
-                            Debug.WriteLine($"OneBotAPIHandler: 好友數據不是數組類型: {response.Data.Type}");
+                            Debug.WriteLine($"OneBotAPIHandler: 好友数据不是数组类型: {response.Data.Type}");
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"OneBotAPIHandler: 解析好友數據時發生錯誤: {ex.Message}");
+                        Debug.WriteLine($"OneBotAPIHandler: 解析好友数据时发生错误: {ex.Message}");
                     }
 
-                    // 保存到數據庫並刷新界面
+                    // 保存到数据库并刷新界面
                     Task.Run(async () =>
                     {
                         DataAccess.SaveFriendsWithCategories(categories);
-                        // 計算總好友數
+                        // 计算总好友数
                         var totalFriends = 0;
                         foreach (var category in categories)
                             if (category.BuddyList != null)
                                 totalFriends += category.BuddyList.Count;
 
-                        Debug.WriteLine($"OneBotAPIHandler: 成功處理並保存 {categories.Count} 個分類和 {totalFriends} 個好友");
+                        Debug.WriteLine($"OneBotAPIHandler: 成功处理并保存 {categories.Count} 个分类和 {totalFriends} 个好友");
 
-                        // 數據保存完成後，在 UI 線程中刷新界面
+                        // 数据保存完成后，在 UI 线程中刷新界面
                         await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
-                            CoreDispatcherPriority.Normal, () => { _mainView?.RefreshContactsAndGroups(); });
+                            CoreDispatcherPriority.Normal, () =>
+                            {
+                                _mainView?.RefreshContactsAndGroups();
+                                // 新增：更新聊天列表中的好友信息
+                                _mainView?.UpdateFriendInfoInChatList();
+                                Debug.WriteLine("已触发聊天列表好友信息更新");
+                            });
                     });
                 }
                 else
                 {
-                    Debug.WriteLine($"OneBotAPIHandler: 好友列表請求失敗 - Status: {response.Status}");
+                    Debug.WriteLine($"OneBotAPIHandler: 好友列表请求失败 - Status: {response.Status}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"OneBotAPIHandler: 處理好友列表響應時發生錯誤: {ex.Message}");
+                Debug.WriteLine($"OneBotAPIHandler: 处理好友列表响应时发生错误: {ex.Message}");
             }
         }
 
