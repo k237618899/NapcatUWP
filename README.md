@@ -44,4 +44,5 @@ TODO...
 TODO...
 
 ## License
-AGPLv3
+![image](https://github.com/user-attachments/assets/90acbd18-40b5-4a2d-bf24-4e289a7f7da3)
+
