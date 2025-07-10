@@ -11,11 +11,29 @@ using NapcatUWP.Models;
 
 namespace NapcatUWP.Controls
 {
+    /// <summary>
+    /// 视频播放事件参数类
+    /// </summary>
+    public class VideoPlayEventArgs : EventArgs
+    {
+        public string VideoUrl { get; }
+        public string Title { get; }
+
+        public VideoPlayEventArgs(string videoUrl, string title = "视频播放")
+        {
+            VideoUrl = videoUrl;
+            Title = title;
+        }
+    }
+
     public sealed partial class MessageSegmentControl : UserControl
     {
         public static readonly DependencyProperty SegmentsProperty =
             DependencyProperty.Register(nameof(Segments), typeof(IList<MessageSegment>), typeof(MessageSegmentControl),
                 new PropertyMetadata(null, OnSegmentsChanged));
+
+        // 视频播放事件
+        public event EventHandler<VideoPlayEventArgs> VideoPlayRequested;
 
         public MessageSegmentControl()
         {
@@ -47,7 +65,6 @@ namespace NapcatUWP.Controls
             }
         }
 
-        // 在 CreateSegmentElement 方法中添加更好的類型檢查
         private FrameworkElement CreateSegmentElement(MessageSegment segment)
         {
             Debug.WriteLine($"創建消息段元素: Type={segment.Type}, ActualType={segment.GetType().Name}");
@@ -78,55 +95,89 @@ namespace NapcatUWP.Controls
             }
         }
 
-        // 添加輔助方法來從通用 MessageSegment 創建具體類型
+        #region 辅助方法 - 从通用MessageSegment创建具体类型
+
         private ImageSegment CreateImageSegmentFromData(MessageSegment segment)
         {
             var imageSegment = new ImageSegment();
-            imageSegment.Data = segment.Data;
+            // 复制数据
+            foreach (var kvp in segment.Data)
+            {
+                imageSegment.Data[kvp.Key] = kvp.Value;
+            }
+
             return imageSegment;
         }
 
         private AtSegment CreateAtSegmentFromData(MessageSegment segment)
         {
             var atSegment = new AtSegment();
-            atSegment.Data = segment.Data;
+            foreach (var kvp in segment.Data)
+            {
+                atSegment.Data[kvp.Key] = kvp.Value;
+            }
+
             return atSegment;
         }
 
         private FaceSegment CreateFaceSegmentFromData(MessageSegment segment)
         {
             var faceSegment = new FaceSegment();
-            faceSegment.Data = segment.Data;
+            foreach (var kvp in segment.Data)
+            {
+                faceSegment.Data[kvp.Key] = kvp.Value;
+            }
+
             return faceSegment;
         }
 
         private RecordSegment CreateRecordSegmentFromData(MessageSegment segment)
         {
             var recordSegment = new RecordSegment();
-            recordSegment.Data = segment.Data;
+            foreach (var kvp in segment.Data)
+            {
+                recordSegment.Data[kvp.Key] = kvp.Value;
+            }
+
             return recordSegment;
         }
 
         private VideoSegment CreateVideoSegmentFromData(MessageSegment segment)
         {
             var videoSegment = new VideoSegment();
-            videoSegment.Data = segment.Data;
+            foreach (var kvp in segment.Data)
+            {
+                videoSegment.Data[kvp.Key] = kvp.Value;
+            }
+
             return videoSegment;
         }
 
         private FileSegment CreateFileSegmentFromData(MessageSegment segment)
         {
             var fileSegment = new FileSegment();
-            fileSegment.Data = segment.Data;
+            foreach (var kvp in segment.Data)
+            {
+                fileSegment.Data[kvp.Key] = kvp.Value;
+            }
+
             return fileSegment;
         }
 
         private ReplySegment CreateReplySegmentFromData(MessageSegment segment)
         {
             var replySegment = new ReplySegment();
-            replySegment.Data = segment.Data;
+            foreach (var kvp in segment.Data)
+            {
+                replySegment.Data[kvp.Key] = kvp.Value;
+            }
+
             return replySegment;
         }
+
+        #endregion
+
+        #region 创建UI元素的方法
 
         private TextBlock CreateTextSegment(TextSegment segment)
         {
@@ -160,7 +211,7 @@ namespace NapcatUWP.Controls
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            // 設置圖片源
+            // 设置图片源
             if (!string.IsNullOrEmpty(segment?.Url))
                 try
                 {
@@ -169,7 +220,6 @@ namespace NapcatUWP.Controls
                 }
                 catch
                 {
-                    // 圖片加載失敗時顯示占位符
                     border.Child = CreateImagePlaceholder("🖼️ 圖片");
                 }
             else
@@ -190,7 +240,6 @@ namespace NapcatUWP.Controls
 
             var textBlock = new TextBlock
             {
-                // 使用 DisplayText 屬性來顯示成員名稱
                 Text = segment?.IsAtAll == true ? "@所有人" : segment?.DisplayText ?? $"@{segment?.QQ}",
                 Foreground = new SolidColorBrush(Colors.White),
                 FontSize = 14,
@@ -241,7 +290,7 @@ namespace NapcatUWP.Controls
             var icon = new FontIcon
             {
                 FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                Glyph = segment?.Magic == true ? "\uE1D6" : "\uE189", // 魔法語音或普通語音圖標
+                Glyph = segment?.Magic == true ? "\uE1D6" : "\uE189",
                 FontSize = 16,
                 Foreground = new SolidColorBrush(Colors.White),
                 Margin = new Thickness(0, 0, 8, 0)
@@ -262,48 +311,100 @@ namespace NapcatUWP.Controls
             return border;
         }
 
-        private Border CreateVideoSegment(VideoSegment segment)
+        private FrameworkElement CreateVideoSegment(VideoSegment videoSegment)
         {
-            var border = new Border
+            try
             {
-                Background = new SolidColorBrush(Color.FromArgb(255, 60, 65, 71)),
-                CornerRadius = new CornerRadius(8),
-                Margin = new Thickness(0, 4, 0, 4),
-                MinWidth = 200,
-                MinHeight = 120,
-                MaxWidth = 250,
-                MaxHeight = 200
-            };
+                var videoContainer = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(255, 60, 65, 71)),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(12),
+                    Margin = new Thickness(2),
+                    Width = 200,
+                    Height = 120
+                };
 
-            var stackPanel = new StackPanel
+                var videoContent = new StackPanel
+                {
+                    Orientation = Orientation.Vertical,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                // 视频图标
+                var videoIcon = new TextBlock
+                {
+                    Text = "🎬",
+                    FontSize = 32,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Foreground = new SolidColorBrush(Colors.White)
+                };
+
+                // 视频文本
+                var videoText = new TextBlock
+                {
+                    Text = "点击播放视频",
+                    FontSize = 12,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(Colors.LightGray)
+                };
+
+                // 播放按钮
+                var playButton = new Button
+                {
+                    Content = "▶ 播放",
+                    Background = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215)),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(12, 6, 12, 6),
+                    FontSize = 12,
+                    Margin = new Thickness(0, 8, 0, 0),
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+
+                // 点击事件处理
+                playButton.Click += (sender, e) =>
+                {
+                    try
+                    {
+                        var videoUrl = videoSegment.Url;
+                        if (string.IsNullOrEmpty(videoUrl))
+                            videoUrl = videoSegment.File;
+
+                        if (!string.IsNullOrEmpty(videoUrl))
+                        {
+                            Debug.WriteLine($"MessageSegmentControl: 请求播放视频 - URL: {videoUrl}");
+
+                            // 触发视频播放事件
+                            VideoPlayRequested?.Invoke(this, new VideoPlayEventArgs(videoUrl, "视频播放"));
+                        }
+                        else
+                        {
+                            Debug.WriteLine("MessageSegmentControl: 视频URL为空，无法播放");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"MessageSegmentControl: 处理视频播放点击时发生错误: {ex.Message}");
+                    }
+                };
+
+                videoContent.Children.Add(videoIcon);
+                videoContent.Children.Add(videoText);
+                videoContent.Children.Add(playButton);
+                videoContainer.Child = videoContent;
+
+                Debug.WriteLine($"MessageSegmentControl: 成功创建视频段UI - URL: {videoSegment.Url ?? videoSegment.File}");
+                return videoContainer;
+            }
+            catch (Exception ex)
             {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            var icon = new FontIcon
-            {
-                FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                Glyph = "\uE102", // 播放圖標
-                FontSize = 32,
-                Foreground = new SolidColorBrush(Colors.White),
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-
-            var textBlock = new TextBlock
-            {
-                Text = "🎬 視頻",
-                Foreground = new SolidColorBrush(Colors.White),
-                FontSize = 14,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 8, 0, 0)
-            };
-
-            stackPanel.Children.Add(icon);
-            stackPanel.Children.Add(textBlock);
-            border.Child = stackPanel;
-
-            return border;
+                Debug.WriteLine($"MessageSegmentControl: 创建视频段UI时发生错误: {ex.Message}");
+                return CreateDefaultSegment(videoSegment);
+            }
         }
 
         private Border CreateFileSegment(FileSegment segment)
@@ -325,7 +426,7 @@ namespace NapcatUWP.Controls
             var icon = new FontIcon
             {
                 FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                Glyph = "\uE160", // 文件圖標
+                Glyph = "\uE160",
                 FontSize = 16,
                 Foreground = new SolidColorBrush(Colors.White),
                 Margin = new Thickness(0, 0, 8, 0)
@@ -358,7 +459,7 @@ namespace NapcatUWP.Controls
 
             var textBlock = new TextBlock
             {
-                Text = segment?.GetReplyContent() ?? "💬 回覆", // 使用新的 GetReplyContent 方法
+                Text = segment?.GetReplyContent() ?? "💬 回覆",
                 Foreground = new SolidColorBrush(Colors.White),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap
@@ -400,5 +501,7 @@ namespace NapcatUWP.Controls
                 VerticalAlignment = VerticalAlignment.Center
             };
         }
+
+        #endregion
     }
 }

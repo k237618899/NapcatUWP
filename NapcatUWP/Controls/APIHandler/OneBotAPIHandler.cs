@@ -220,6 +220,9 @@ namespace NapcatUWP.Controls.APIHandler
                             DataAccess.SaveGroupMember(memberInfo);
                             Debug.WriteLine($"OneBotAPIHandler: 成功保存群組成員信息 - {memberInfo.GetDisplayName()}");
 
+                            // 新增：更新舊消息中的用戶信息
+                            DataAccess.UpdateUserInfoInMessages();
+
                             // 通知UI更新（如果當前聊天是該群組）
                             Task.Run(async () =>
                             {
@@ -410,14 +413,19 @@ namespace NapcatUWP.Controls.APIHandler
         }
 
         /// <summary>
-        ///     解析歷史消息
+        ///     解析歷史消息 - 修正時間戳處理
         /// </summary>
         private ChatMessage ParseHistoryMessage(JToken messageToken, bool isGroup, long chatId = 0)
         {
             try
             {
                 var messageId = messageToken.Value<long>("message_id");
-                var timestamp = DateTimeOffset.FromUnixTimeSeconds(messageToken.Value<long>("time")).DateTime;
+                var unixTimestamp = messageToken.Value<long>("time");
+                var originalTimestamp = DateTimeOffset.FromUnixTimeSeconds(unixTimestamp).DateTime;
+
+                // 使用修正後的時間戳處理
+                var timestamp = DataAccess.ProcessTimestamp(originalTimestamp);
+
                 var senderId = messageToken.Value<long>("user_id");
                 var messageType = messageToken.Value<string>("message_type") ?? (isGroup ? "group" : "private");
 
@@ -773,6 +781,9 @@ namespace NapcatUWP.Controls.APIHandler
             // 獲取消息ID
             var messageId = (long)json.GetNamedNumber("message_id", 0);
 
+            // 獲取並修正時間戳
+            var currentTime = DateTime.Now;
+
             // 獲取發送者信息
             if (messageType == "group")
             {
@@ -814,9 +825,10 @@ namespace NapcatUWP.Controls.APIHandler
                 Debug.WriteLine(
                     $"OneBotAPIHandler: 收到群組消息 - 群組: {groupName} (ID: {chatId}), 發送者: {actualSenderName} (ID: {actualSenderId}), 消息: {messageText}");
 
-                // 保存到數據庫（使用服務器的 message_id）
+                // 保存到數據庫（使用服務器的 message_id 使用當前時間）
                 DataAccess.SaveMessage(messageId, chatId, isGroup, messageText,
-                    isGroup ? "group" : "private", actualSenderId, senderName, false, DateTime.Now, messageSegments);
+                    isGroup ? "group" : "private", actualSenderId, senderName, false, currentTime, messageSegments);
+
 
                 // 在 UI 線程中處理消息
                 await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
@@ -850,7 +862,7 @@ namespace NapcatUWP.Controls.APIHandler
 
                 // 保存到數據庫（使用服務器的 message_id）
                 DataAccess.SaveMessage(messageId, chatId, isGroup, messageText,
-                    isGroup ? "group" : "private", actualSenderId, senderName, false, DateTime.Now, messageSegments);
+                    isGroup ? "group" : "private", actualSenderId, senderName, false, currentTime, messageSegments);
 
                 // 在 UI 線程中處理消息
                 await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
@@ -1139,7 +1151,7 @@ namespace NapcatUWP.Controls.APIHandler
 
 
         /// <summary>
-        ///     处理好友列表响应 - 现在使用 JToken
+        ///     处理好友列表响应 - 现在使用 JToken，並更新舊消息用戶信息
         /// </summary>
         private void FriendsWithCategoryHandler(ResponseEntity response)
         {
@@ -1244,6 +1256,9 @@ namespace NapcatUWP.Controls.APIHandler
                                 totalFriends += category.BuddyList.Count;
 
                         Debug.WriteLine($"OneBotAPIHandler: 成功处理并保存 {categories.Count} 个分类和 {totalFriends} 个好友");
+
+                        // 新增：更新舊消息中的用戶信息
+                        DataAccess.UpdateUserInfoInMessages();
 
                         // 数据保存完成后，在 UI 线程中刷新界面
                         await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(

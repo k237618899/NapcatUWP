@@ -44,7 +44,8 @@
                             Background="#FF3C4147"
                             CornerRadius="12,12,12,4"
                             Padding="12,8">
-                                <controls:MessageSegmentControl Segments="{Binding Segments}" />
+                                <controls:MessageSegmentControl Segments="{Binding Segments}" 
+                                VideoPlayRequested="MessageSegmentControl_VideoPlayRequested"/>
                             </Border>
 
                             <!-- 時間戳 -->
@@ -73,7 +74,8 @@
                             Background="#FF007ACC"
                             CornerRadius="12,12,4,12"
                             Padding="12,8">
-                                <controls:MessageSegmentControl Segments="{Binding Segments}" />
+                                <controls:MessageSegmentControl Segments="{Binding Segments}" 
+                                        VideoPlayRequested="MessageSegmentControl_VideoPlayRequested"/>
                             </Border>
 
                             <!-- 時間戳 -->
@@ -174,6 +176,7 @@
         </controls:MessageTemplateSelector>
     </Page.Resources>
 
+    <!-- 回到Grid作为根容器，移除有问题的Canvas和RelativeSource绑定 -->
     <Grid x:Name="RootGrid">
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="SidebarColumn" Width="0" />
@@ -220,7 +223,6 @@
             x:Name="MainContentGrid"
             Grid.Column="1"
             Background="#FF23272A">
-            <!-- 保留現有的覆蓋層、搜索欄等 -->
 
             <Rectangle
                 x:Name="OverlayRect"
@@ -663,6 +665,18 @@
         VerticalAlignment="Center"
         Foreground="#7e6ca8"
         IsActive="True" />
+        </Grid>
+
+        <!-- 视频播放器覆盖层 - 放在 Grid 的最后确保在最顶层 -->
+        <Grid x:Name="VideoPlayerOverlayContainer"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Stretch"
+              Background="Transparent"
+              Visibility="Collapsed">
+            <controls:VideoPlayerControl x:Name="VideoPlayerOverlay" 
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      CloseRequested="VideoPlayerOverlay_CloseRequested"/>
         </Grid>
     </Grid>
 </Page>

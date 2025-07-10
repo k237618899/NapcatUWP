@@ -136,6 +136,9 @@
       <DependentUpon>MessageSegmentControl.xaml</DependentUpon>
     </Compile>
     <Compile Include="Controls\MessageTemplateSelector.cs" />
+    <Compile Include="Controls\VideoPlayerControl.xaml.cs">
+      <DependentUpon>VideoPlayerControl.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Controls\WebSocketClientStarter.cs" />
     <Compile Include="Converters\UnreadCountToVisibilityConverter.cs" />
     <Compile Include="Models\ChatItem.cs" />
@@ -233,6 +236,10 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="Controls\VideoPlayerControl.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="Pages\MainHubView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -255,6 +262,9 @@
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json">
       <Version>13.0.3</Version>
+    </PackageReference>
+    <PackageReference Include="System.ValueTuple">
+      <Version>4.3.0</Version>
     </PackageReference>
   </ItemGroup>
   <ItemGroup>

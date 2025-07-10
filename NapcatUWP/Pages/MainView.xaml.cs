@@ -75,8 +75,128 @@ namespace NapcatUWP.Pages
 
             // 註冊系統返回鍵處理
             RegisterBackButtonHandler();
+
+            // 新增：在後台更新用戶信息和修復時間戳
+            Task.Run(() =>
+            {
+                DataAccess.UpdateUserInfoInMessages();
+                DataAccess.FixTimestampIssue();
+            });
+            // 测试视频播放器（5秒后自动测试）
+            Task.Delay(5000).ContinueWith(_ =>
+            {
+                CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal,
+                    () => { TestVideoPlayer(); });
+            });
         }
 
+        // 更新测试方法
+        private void TestVideoPlayer()
+        {
+            try
+            {
+                Debug.WriteLine("MainView: 开始测试视频播放器");
+                Debug.WriteLine($"MainView: VideoPlayerOverlay 是否为 null: {VideoPlayerOverlay == null}");
+                Debug.WriteLine(
+                    $"MainView: VideoPlayerOverlayContainer 是否为 null: {VideoPlayerOverlayContainer == null}");
+
+                if (VideoPlayerOverlay != null && VideoPlayerOverlayContainer != null)
+                {
+                    Debug.WriteLine(
+                        $"MainView: VideoPlayerOverlayContainer 类型: {VideoPlayerOverlayContainer.GetType().Name}");
+                    Debug.WriteLine(
+                        $"MainView: VideoPlayerOverlayContainer 当前可见性: {VideoPlayerOverlayContainer.Visibility}");
+
+                    // 测试显示视频播放器
+                    VideoPlayerOverlayContainer.Visibility = Visibility.Visible;
+                    Debug.WriteLine($"MainView: 设置后的可见性: {VideoPlayerOverlayContainer.Visibility}");
+
+                    // 延迟一秒后隐藏
+                    Task.Delay(2000).ContinueWith(_ =>
+                    {
+                        CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                        {
+                            VideoPlayerOverlayContainer.Visibility = Visibility.Collapsed;
+                            Debug.WriteLine("MainView: 测试完成，隐藏视频播放器");
+                        });
+                    });
+                }
+                else
+                {
+                    Debug.WriteLine("MainView: VideoPlayerOverlay 或 VideoPlayerOverlayContainer 为 null！");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"MainView: 测试视频播放器时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 处理消息段控件的视频播放请求
+        /// </summary>
+        private void MessageSegmentControl_VideoPlayRequested(object sender, VideoPlayEventArgs e)
+        {
+            Debug.WriteLine(
+                $"MainView: 收到视频播放请求 - Sender: {sender?.GetType().Name}, URL: {e.VideoUrl}, Title: {e.Title}");
+            PlayVideo(e.VideoUrl, e.Title);
+        }
+
+        /// <summary>
+        /// 处理视频播放请求
+        /// </summary>
+        /// <param name="videoUrl">视频URL</param>
+        /// <param name="title">视频标题</param>
+        public void PlayVideo(string videoUrl, string title = "视频播放")
+        {
+            try
+            {
+                Debug.WriteLine($"MainView: 请求播放视频 - URL: {videoUrl}, Title: {title}");
+                Debug.WriteLine($"MainView: VideoPlayerOverlay 是否为 null: {VideoPlayerOverlay == null}");
+                Debug.WriteLine(
+                    $"MainView: VideoPlayerOverlayContainer 是否为 null: {VideoPlayerOverlayContainer == null}");
+
+                if (VideoPlayerOverlay != null && VideoPlayerOverlayContainer != null)
+                {
+                    Debug.WriteLine($"MainView: 视频播放器当前可见性: {VideoPlayerOverlayContainer.Visibility}");
+
+                    // 显示视频播放器容器
+                    VideoPlayerOverlayContainer.Visibility = Visibility.Visible;
+                    Debug.WriteLine($"MainView: 设置视频播放器容器可见性为 Visible");
+
+                    VideoPlayerOverlay.PlayVideo(videoUrl, title);
+                    Debug.WriteLine($"MainView: 调用视频播放器播放方法完成");
+
+                    Debug.WriteLine($"MainView: 视频播放器最终可见性: {VideoPlayerOverlayContainer.Visibility}");
+                }
+                else
+                {
+                    Debug.WriteLine("MainView: VideoPlayerOverlay 或 VideoPlayerOverlayContainer 为 null！");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"MainView: 播放视频时发生错误: {ex.Message}");
+                Debug.WriteLine($"MainView: 错误堆栈: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 处理视频播放器关闭请求
+        /// </summary>
+        private void VideoPlayerOverlay_CloseRequested(object sender, EventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("MainView: 视频播放器请求关闭");
+                VideoPlayerOverlayContainer.Visibility = Visibility.Collapsed;
+                Debug.WriteLine($"MainView: 视频播放器关闭后可见性: {VideoPlayerOverlayContainer.Visibility}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"MainView: 关闭视频播放器时发生错误: {ex.Message}");
+            }
+        }
 
         public ObservableCollection<ChatItem> ChatItems { get; set; }
         public ObservableCollection<GroupInfo> GroupItems { get; set; }
@@ -143,6 +263,18 @@ namespace NapcatUWP.Pages
             try
             {
                 Debug.WriteLine($"系統返回鍵被按下 - 當前頁面: {_currentPage}, 側邊欄狀態: {(_sidebarOpen ? "開啟" : "關閉")}");
+
+                // 首先检查视频播放器是否正在显示
+                if (VideoPlayerOverlayContainer != null && VideoPlayerOverlayContainer.Visibility == Visibility.Visible)
+                {
+                    e.Handled = VideoPlayerOverlay.HandleBackButton();
+                    if (e.Handled)
+                    {
+                        VideoPlayerOverlayContainer.Visibility = Visibility.Collapsed;
+                    }
+
+                    return;
+                }
 
                 // 如果側邊欄開啟，先關閉側邊欄
                 if (_sidebarOpen)
@@ -535,20 +667,17 @@ namespace NapcatUWP.Pages
                             var systemMessages = _currentMessages.Where(m => m.MessageType == "system").ToList();
                             foreach (var msg in systemMessages) _currentMessages.Remove(msg);
 
-                            // 添加歷史消息到當前消息列表的開頭
-                            var sortedMessages = historyMessages.OrderBy(m => m.Timestamp).ToList();
-                            foreach (var message in sortedMessages)
-                            {
-                                // 檢查消息是否已存在（避免重複顯示）
-                                var existingMessage = _currentMessages.FirstOrDefault(m =>
-                                    m.Timestamp == message.Timestamp &&
-                                    m.SenderId == message.SenderId &&
-                                    m.Content == message.Content);
+                            // 清除所有現有消息，重新加載完整的歷史記錄
+                            _currentMessages.Clear();
 
-                                if (existingMessage == null) _currentMessages.Insert(0, message);
+                            // 從數據庫重新加載所有消息（包括剛保存的歷史消息）
+                            var allMessages = DataAccess.GetChatMessages(chatId, isGroup);
+                            foreach (var message in allMessages.OrderBy(m => m.Timestamp))
+                            {
+                                _currentMessages.Add(message);
                             }
 
-                            // 如果沒有歷史消息，顯示歡迎消息
+                            // 如果沒有任何消息，顯示歡迎消息
                             if (_currentMessages.Count == 0)
                             {
                                 var welcomeMessage = new ChatMessage
@@ -928,30 +1057,39 @@ namespace NapcatUWP.Pages
         {
             try
             {
-                if (_currentMessages == null) return;
+                if (_currentMessages == null || _currentChat == null) return;
 
                 Debug.WriteLine("RefreshCurrentChatMessages: 開始刷新當前聊天消息");
 
-                // 觸發消息重新渲染
-                foreach (var message in _currentMessages)
-                    if (message.Segments != null)
-                    {
-                        var hasAtSegment = false;
-                        foreach (var segment in message.Segments)
-                            if (segment is AtSegment atSegment && atSegment.GroupId > 0)
-                            {
-                                // 刷新 @ 消息段的顯示文本
-                                atSegment.RefreshDisplayText();
-                                hasAtSegment = true;
-                            }
+                // 重新從數據庫加載當前聊天的所有消息
+                var allMessages = DataAccess.GetChatMessages(_currentChat.ChatId, _currentChat.IsGroup);
 
-                        if (hasAtSegment)
-                        {
-                            // 通過重新設置 Segments 屬性來觸發 UI 更新
-                            var segments = message.Segments;
-                            message.Segments = new List<MessageSegment>(segments);
-                        }
-                    }
+                // 清空當前消息列表
+                _currentMessages.Clear();
+
+                // 重新添加所有消息
+                foreach (var message in allMessages.OrderBy(m => m.Timestamp))
+                {
+                    _currentMessages.Add(message);
+                }
+
+                // 如果沒有消息，顯示歡迎消息
+                if (_currentMessages.Count == 0)
+                {
+                    var welcomeMessage = new ChatMessage
+                    {
+                        Content = _currentChat.IsGroup ? "歡迎來到群組聊天！" : "開始聊天吧！",
+                        Timestamp = DateTime.Now.AddMinutes(-1),
+                        IsFromMe = false,
+                        SenderName = "系統",
+                        SenderId = -1,
+                        MessageType = "system"
+                    };
+                    _currentMessages.Add(welcomeMessage);
+                }
+
+                // 滾動到底部
+                EnsureScrollToBottom();
 
                 Debug.WriteLine("RefreshCurrentChatMessages: 消息刷新完成");
             }

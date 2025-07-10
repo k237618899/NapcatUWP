@@ -10,6 +10,8 @@ using NapcatUWP.Models;
 using NapcatUWP.Tools;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Runtime.CompilerServices;
+
 
 namespace NapcatUWP.Controls
 {
@@ -818,7 +820,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        ///     加載聊天記錄 - 增強版，支持消息段，動態更新發送者名稱
+        ///     加載聊天記錄 - 增強版，支持消息段，動態更新發送者名稱，修正時間戳
         /// </summary>
         public static List<ChatMessage> GetChatMessages(long chatId, bool isGroup, int limit = 50)
         {
@@ -848,7 +850,10 @@ namespace NapcatUWP.Controls
                         while (query.Read())
                         {
                             var timestampStr = Convert.ToString(query["Timestamp"]);
-                            DateTime.TryParse(timestampStr, out var timestamp);
+                            DateTime.TryParse(timestampStr, out var originalTimestamp);
+
+                            // 修正時間戳
+                            var timestamp = ProcessTimestamp(originalTimestamp);
 
                             // 嘗試反序列化消息段
                             var segments = new List<MessageSegment>();
@@ -900,7 +905,7 @@ namespace NapcatUWP.Controls
                             else if (isGroup)
                             {
                                 // 群組消息：嘗試從群組成員信息獲取最新的顯示名稱
-                                var memberInfo = GetGroupMember(chatId, senderId); // 修正：使用正確的方法名
+                                var memberInfo = GetGroupMember(chatId, senderId);
                                 if (memberInfo != null)
                                     senderName = memberInfo.GetDisplayName();
                                 else
@@ -924,7 +929,7 @@ namespace NapcatUWP.Controls
                                 SenderId = senderId,
                                 SenderName = senderName, // 使用動態生成的名稱
                                 IsFromMe = isFromMe,
-                                Timestamp = timestamp
+                                Timestamp = timestamp // 使用修正後的時間戳
                             };
 
                             // 最後設置消息段，這將觸發屬性更新
@@ -1731,6 +1736,184 @@ namespace NapcatUWP.Controls
             {
                 Debug.WriteLine($"檢查消息是否存在錯誤: {ex.Message}");
                 return false;
+            }
+        }
+
+        #endregion
+
+        #region 用戶信息更新方法
+
+        /// <summary>
+        ///     更新舊消息中的用戶信息
+        /// </summary>
+        public static void UpdateUserInfoInMessages()
+        {
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    // 獲取所有需要更新的消息（顯示為"用戶 xxxx"格式的消息）
+                    var selectOldMessagesCommand = new SqliteCommand(@"
+                        SELECT DISTINCT ChatId, SenderId, IsGroup, SenderName 
+                        FROM Messages 
+                        WHERE SenderName LIKE '用戶 %' AND IsFromMe = 0", db);
+
+                    var messagesToUpdate = new List<(long ChatId, long SenderId, bool IsGroup, string OldSenderName)>();
+
+                    using (var query = selectOldMessagesCommand.ExecuteReader())
+                    {
+                        while (query.Read())
+                        {
+                            messagesToUpdate.Add((
+                                Convert.ToInt64(query["ChatId"]),
+                                Convert.ToInt64(query["SenderId"]),
+                                Convert.ToInt32(query["IsGroup"]) == 1,
+                                Convert.ToString(query["SenderName"]) ?? ""
+                            ));
+                        }
+                    }
+
+                    Debug.WriteLine($"找到 {messagesToUpdate.Count} 條需要更新用戶信息的消息");
+
+                    var updatedCount = 0;
+                    var updateCommand = new SqliteCommand(@"
+                        UPDATE Messages 
+                        SET SenderName = @newSenderName 
+                        WHERE ChatId = @chatId AND SenderId = @senderId AND IsGroup = @isGroup AND SenderName = @oldSenderName",
+                        db);
+
+                    foreach (var (chatId, senderId, isGroup, oldSenderName) in messagesToUpdate)
+                    {
+                        string newSenderName;
+
+                        if (isGroup)
+                        {
+                            // 群組消息：優先從群組成員信息獲取
+                            var memberInfo = GetGroupMember(chatId, senderId);
+                            if (memberInfo != null)
+                            {
+                                newSenderName = memberInfo.GetDisplayName();
+                            }
+                            else
+                            {
+                                // 沒有群組成員信息，嘗試從好友列表獲取
+                                newSenderName = GetFriendNameById(senderId);
+                            }
+                        }
+                        else
+                        {
+                            // 私聊消息：從好友列表獲取
+                            newSenderName = GetFriendNameById(senderId);
+                        }
+
+                        // 如果找到了有效的用戶名，且與舊名稱不同，則更新
+                        if (!string.IsNullOrEmpty(newSenderName) &&
+                            !newSenderName.StartsWith("用戶 ") &&
+                            newSenderName != oldSenderName)
+                        {
+                            updateCommand.Parameters.Clear();
+                            updateCommand.Parameters.AddWithValue("@newSenderName", newSenderName);
+                            updateCommand.Parameters.AddWithValue("@chatId", chatId);
+                            updateCommand.Parameters.AddWithValue("@senderId", senderId);
+                            updateCommand.Parameters.AddWithValue("@isGroup", isGroup ? 1 : 0);
+                            updateCommand.Parameters.AddWithValue("@oldSenderName", oldSenderName);
+
+                            var affectedRows = updateCommand.ExecuteNonQuery();
+                            if (affectedRows > 0)
+                            {
+                                updatedCount += affectedRows;
+                                Debug.WriteLine(
+                                    $"更新用戶信息: {oldSenderName} -> {newSenderName} (ChatId: {chatId}, SenderId: {senderId}, IsGroup: {isGroup})");
+                            }
+                        }
+                    }
+
+                    Debug.WriteLine($"成功更新了 {updatedCount} 條消息的用戶信息");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"更新用戶信息時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     修復時間戳問題 - 針對 Windows Phone
+        /// </summary>
+        public static void FixTimestampIssue()
+        {
+            try
+            {
+                // 檢查是否是 Windows Phone
+                var deviceFamily = Windows.System.Profile.AnalyticsInfo.VersionInfo.DeviceFamily;
+                if (deviceFamily != "Windows.Mobile")
+                {
+                    Debug.WriteLine("不是 Windows Phone，跳過時間戳修復");
+                    return;
+                }
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    // 獲取系統時區偏移
+                    var localTimeZone = TimeZoneInfo.Local;
+                    var offsetHours = localTimeZone.BaseUtcOffset.TotalHours;
+                    Debug.WriteLine($"當前時區偏移: {offsetHours} 小時");
+
+                    // 如果時區偏移是 +8（中國時區），則修復時間戳
+                    if (Math.Abs(offsetHours - 8) < 0.1) // 允許小的浮點誤差
+                    {
+                        var updateCommand = new SqliteCommand(@"
+                            UPDATE Messages 
+                            SET Timestamp = datetime(Timestamp, '+8 hours') 
+                            WHERE Timestamp < datetime('now', 'localtime')", db);
+
+                        var affectedRows = updateCommand.ExecuteNonQuery();
+                        Debug.WriteLine($"Windows Phone 時間戳修復完成，更新了 {affectedRows} 條記錄");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"修復時間戳時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     修正版時間戳處理 - 根據設備類型調整
+        /// </summary>
+        public static DateTime ProcessTimestamp(DateTime originalTimestamp)
+        {
+            try
+            {
+                // 檢查是否是 Windows Phone
+                var deviceFamily = Windows.System.Profile.AnalyticsInfo.VersionInfo.DeviceFamily;
+                if (deviceFamily == "Windows.Mobile")
+                {
+                    // Windows Phone 需要調整時區
+                    var localTimeZone = TimeZoneInfo.Local;
+                    if (Math.Abs(localTimeZone.BaseUtcOffset.TotalHours - 8) < 0.1) // 中國時區
+                    {
+                        // 如果原始時間戳看起來已經被錯誤地減去了8小時，則加回來
+                        var timeDiff = DateTime.Now - originalTimestamp;
+                        if (timeDiff.TotalHours > 7 && timeDiff.TotalHours < 9)
+                        {
+                            return originalTimestamp.AddHours(8);
+                        }
+                    }
+                }
+
+                return originalTimestamp;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"處理時間戳時發生錯誤: {ex.Message}");
+                return originalTimestamp;
             }
         }
 
