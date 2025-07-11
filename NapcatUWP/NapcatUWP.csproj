@@ -132,6 +132,7 @@
     </Compile>
     <Compile Include="Controls\APIHandler\OneBotAPIHandler.cs" />
     <Compile Include="Controls\DataAccess.cs" />
+    <Compile Include="Controls\DatabaseStatistics.cs" />
     <Compile Include="Controls\MessageSegmentControl.xaml.cs">
       <DependentUpon>MessageSegmentControl.xaml</DependentUpon>
     </Compile>
@@ -162,9 +163,11 @@
     <Compile Include="Pages\SidebarWidthToVisibilityConverter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Tools\ActionBase.cs" />
+    <Compile Include="Tools\DatabaseManager.cs" />
     <Compile Include="Tools\JSONTools.cs" />
     <Compile Include="Tools\MessageSegmentParser.cs" />
     <Compile Include="Tools\ResponseEntity.cs" />
+    <Compile Include="Tools\SafeDataAccess.cs" />
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest">

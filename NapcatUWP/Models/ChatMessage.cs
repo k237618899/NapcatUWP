@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using NapcatUWP.Tools;
@@ -78,7 +78,7 @@ namespace NapcatUWP.Models
         }
 
         /// <summary>
-        ///     ÏûÏ¢¶ÎÁĞ±í£¬°üº¬ÍêÕûµÄÏûÏ¢½Y˜‹
+        ///     æ¶ˆæ¯æ®µåˆ—è¡¨ï¼ŒåŒ…å«å®Œæ•´çš„æ¶ˆæ¯çµæ§‹
         /// </summary>
         public List<MessageSegment> Segments
         {
@@ -88,13 +88,13 @@ namespace NapcatUWP.Models
                 _segments = value;
                 OnPropertyChanged(nameof(Segments));
                 OnPropertyChanged(nameof(HasRichContent));
-                // ®”¶ÎÂä¸üĞÂ•r£¬ÖØĞÂÉú³É¸»ÎÄ±¾ƒÈÈİ
+                // ç•¶æ®µè½æ›´æ–°æ™‚ï¼Œé‡æ–°ç”Ÿæˆå¯Œæ–‡æœ¬å…§å®¹
                 GenerateRichTextContent();
             }
         }
 
         /// <summary>
-        ///     ¸»ÎÄ±¾ƒÈÈİ£¬ÓÃì¶UIÕ¹Ê¾
+        ///     å¯Œæ–‡æœ¬å…§å®¹ï¼Œç”¨æ–¼UIå±•ç¤º
         /// </summary>
         public string RichTextContent
         {
@@ -107,7 +107,7 @@ namespace NapcatUWP.Models
         }
 
         /// <summary>
-        ///     ÊÇ·ñ°üº¬¸»ƒÈÈİ£¨ˆDÆ¬¡¢ÕZÒôµÈ£©
+        ///     æ˜¯å¦åŒ…å«å¯Œå…§å®¹ï¼ˆåœ–ç‰‡ã€èªéŸ³ç­‰ï¼‰
         /// </summary>
         public bool HasRichContent
         {
@@ -123,27 +123,27 @@ namespace NapcatUWP.Models
         }
 
         /// <summary>
-        ///     ÊÇ·ñ°üº¬ˆDÆ¬
+        ///     æ˜¯å¦åŒ…å«åœ–ç‰‡
         /// </summary>
         public bool HasImages => MessageSegmentParser.HasSegmentType(Segments, "image");
 
         /// <summary>
-        ///     ÊÇ·ñ°üº¬ÕZÒô
+        ///     æ˜¯å¦åŒ…å«èªéŸ³
         /// </summary>
         public bool HasRecord => MessageSegmentParser.HasSegmentType(Segments, "record");
 
         /// <summary>
-        ///     ÊÇ·ñ°üº¬Ò•îl
+        ///     æ˜¯å¦åŒ…å«è¦–é »
         /// </summary>
         public bool HasVideo => MessageSegmentParser.HasSegmentType(Segments, "video");
 
         /// <summary>
-        ///     ÊÇ·ñ°üº¬@Ìá¼°
+        ///     æ˜¯å¦åŒ…å«@æåŠ
         /// </summary>
         public bool HasAt => MessageSegmentParser.HasSegmentType(Segments, "at");
 
         /// <summary>
-        ///     ÊÇ·ñÊÇ»Ø¸²ÏûÏ¢
+        ///     æ˜¯å¦æ˜¯å›è¦†æ¶ˆæ¯
         /// </summary>
         public bool IsReply => MessageSegmentParser.HasSegmentType(Segments, "reply");
 
@@ -152,7 +152,7 @@ namespace NapcatUWP.Models
         public event PropertyChangedEventHandler PropertyChanged;
 
         /// <summary>
-        ///     ¸ù“şÏûÏ¢¶ÎÉú³É¸»ÎÄ±¾ƒÈÈİ
+        ///     æ ¹æ“šæ¶ˆæ¯æ®µç”Ÿæˆå¯Œæ–‡æœ¬å…§å®¹
         /// </summary>
         private void GenerateRichTextContent()
         {

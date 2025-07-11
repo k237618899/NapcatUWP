@@ -252,13 +252,13 @@ namespace NapcatUWP.Controls.APIHandler
         }
 
         /// <summary>
-        ///     处理群组列表响应 - 现在使用 JToken
+        ///     處理群組列表響應 - 現在使用 JToken
         /// </summary>
         private void GroupListHandler(ResponseEntity response)
         {
             try
             {
-                Debug.WriteLine("OneBotAPIHandler: 开始处理群组列表响应");
+                Debug.WriteLine("OneBotAPIHandler: 開始處理群組列表響應");
 
                 if (response.Status == "ok" && response.Data != null)
                 {
@@ -266,7 +266,7 @@ namespace NapcatUWP.Controls.APIHandler
 
                     try
                     {
-                        Debug.WriteLine($"OneBotAPIHandler: 群组数据类型: {response.Data.Type}");
+                        Debug.WriteLine($"OneBotAPIHandler: 群組數據類型: {response.Data.Type}");
 
                         if (response.Data.Type == JTokenType.Array)
                             foreach (var groupToken in response.Data)
@@ -285,56 +285,56 @@ namespace NapcatUWP.Controls.APIHandler
                                 }
                                 catch (Exception ex)
                                 {
-                                    Debug.WriteLine($"OneBotAPIHandler: 解析单个群组时发生错误: {ex.Message}");
+                                    Debug.WriteLine($"OneBotAPIHandler: 解析單個群組時發生錯誤: {ex.Message}");
                                 }
                         else
-                            Debug.WriteLine($"OneBotAPIHandler: 群组数据不是数组类型: {response.Data.Type}");
+                            Debug.WriteLine($"OneBotAPIHandler: 群組數據不是陣列類型: {response.Data.Type}");
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"OneBotAPIHandler: 解析群组数据时发生错误: {ex.Message}");
+                        Debug.WriteLine($"OneBotAPIHandler: 解析群組數據時發生錯誤: {ex.Message}");
                     }
 
-                    // 保存到数据库
+                    // 使用安全的異步方法保存到數據庫
                     Task.Run(async () =>
                     {
-                        DataAccess.SaveGroups(groups);
-                        Debug.WriteLine($"OneBotAPIHandler: 成功处理并保存 {groups.Count} 个群组");
+                        await SafeDataAccess.SaveGroupsAsync(groups);
+                        Debug.WriteLine($"OneBotAPIHandler: 成功處理並保存 {groups.Count} 個群組");
 
-                        // 新增：更新聊天列表中的群组信息
+                        // 更新UI
                         await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
                             CoreDispatcherPriority.Normal, () =>
                             {
                                 _mainView?.UpdateGroupInfoInChatList();
-                                Debug.WriteLine("已触发聊天列表群组信息更新");
+                                Debug.WriteLine("已觸發聊天列表群組信息更新");
                             });
                     });
                 }
                 else
                 {
-                    Debug.WriteLine($"OneBotAPIHandler: 群组列表请求失败 - Status: {response.Status}");
+                    Debug.WriteLine($"OneBotAPIHandler: 群組列表請求失敗 - Status: {response.Status}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"OneBotAPIHandler: 处理群组列表响应时发生错误: {ex.Message}");
+                Debug.WriteLine($"OneBotAPIHandler: 處理群組列表響應時發生錯誤: {ex.Message}");
             }
         }
 
 
         /// <summary>
-        ///     定期刷新群组和好友列表（可选）
+        ///     定期重新整理群組和好友列表（可選）
         /// </summary>
         public async void RefreshGroupAndFriendListPeriodically()
         {
             try
             {
-                Debug.WriteLine("OneBotAPIHandler: 定期刷新群组和好友列表");
+                Debug.WriteLine("OneBotAPIHandler: 定期重新整理群組和好友列表");
                 RequestGroupAndFriendList();
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"OneBotAPIHandler: 定期刷新时发生错误: {ex.Message}");
+                Debug.WriteLine($"OneBotAPIHandler: 定期重新整理時發生錯誤: {ex.Message}");
             }
         }
 
@@ -774,109 +774,116 @@ namespace NapcatUWP.Controls.APIHandler
         private async Task HandleReceivedMessage(JsonObject json, string messageType)
         {
             var senderName = "";
-            var actualSenderId = 0L; // 實際發送者ID（個人）
-            var chatId = 0L; // 聊天ID（群組ID或好友ID）
+            var actualSenderId = 0L; // 实际发送者ID（个人）
+            var chatId = 0L; // 聊天ID（群组ID或好友ID）
             var isGroup = messageType == "group";
 
-            // 獲取消息ID
+            // 获取消息ID
             var messageId = (long)json.GetNamedNumber("message_id", 0);
 
-            // 獲取並修正時間戳
+            // 获取并修正时间戳
             var currentTime = DateTime.Now;
 
-            // 獲取發送者信息
-            if (messageType == "group")
+            try
             {
-                // 群組消息處理
-                var groupId = json.GetNamedNumber("group_id", 0);
-                chatId = (long)groupId;
-
-                // 傳遞群組ID進行消息解析
-                var messageContent = GetMessageContent(json, chatId);
-                var messageText = messageContent.PlainText;
-                var messageSegments = messageContent.Segments;
-
-                // 獲取實際發送者ID（群組中的個人）
-                actualSenderId = (long)json.GetNamedNumber("user_id", 0);
-
-                // 從數據庫獲取群組名稱
-                var groupName = DataAccess.GetGroupNameById(chatId);
-
-                // 獲取實際發送者昵稱（顯示在消息內容中）
-                var actualSenderName = "";
-                try
+                // 获取发送者信息
+                if (messageType == "group")
                 {
-                    if (json.ContainsKey("sender"))
+                    // 群组消息处理
+                    var groupId = json.GetNamedNumber("group_id", 0);
+                    chatId = (long)groupId;
+
+                    // 传递群组ID进行消息解析
+                    var messageContent = GetMessageContent(json, chatId);
+                    var messageText = messageContent.PlainText;
+                    var messageSegments = messageContent.Segments;
+
+                    // 获取实际发送者ID（群组中的个人）
+                    actualSenderId = (long)json.GetNamedNumber("user_id", 0);
+
+                    // 从数据库获取群组名称
+                    var groupName = DataAccess.GetGroupNameById(chatId);
+
+                    // 获取实际发送者昵称（显示在消息内容中）
+                    var actualSenderName = "";
+                    try
                     {
-                        var sender = json.GetNamedObject("sender");
-                        var nickname = sender.GetNamedString("nickname", "");
-                        var card = sender.GetNamedString("card", "");
-                        actualSenderName = !string.IsNullOrEmpty(card) ? card : nickname;
+                        if (json.ContainsKey("sender"))
+                        {
+                            var sender = json.GetNamedObject("sender");
+                            var nickname = sender.GetNamedString("nickname", "");
+                            var card = sender.GetNamedString("card", "");
+                            actualSenderName = !string.IsNullOrEmpty(card) ? card : nickname;
+                        }
                     }
+                    catch
+                    {
+                        // 忽略发送者信息错误
+                    }
+
+                    if (string.IsNullOrEmpty(actualSenderName)) actualSenderName = "群成员";
+                    senderName = actualSenderName;
+
+                    Debug.WriteLine(
+                        $"OneBotAPIHandler: 收到群组消息 - 群组: {groupName} (ID: {chatId}), 发送者: {actualSenderName} (ID: {actualSenderId}), 消息: {messageText}");
+
+                    // 使用安全的异步方法保存到数据库
+                    await SafeDataAccess.SaveMessageAsync(messageId, chatId, isGroup, messageText,
+                        "group", actualSenderId, senderName, false, currentTime, messageSegments);
+
+                    // 在 UI 线程中处理消息
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                        CoreDispatcherPriority.Normal, () =>
+                        {
+                            // 添加到聊天界面和数据库，传递正确的参数
+                            _mainView?.AddIncomingMessage(actualSenderName, chatId, actualSenderId, messageText, true,
+                                messageSegments);
+
+                            // 更新聊天列表（显示发送者: 消息内容）
+                            var displayMessage = $"{actualSenderName}: {messageText}";
+                            _mainView?.UpdateChatItem(groupName, displayMessage);
+
+                            Debug.WriteLine("OneBotAPIHandler: 群组消息处理完成");
+                        });
                 }
-                catch
+                else
                 {
-                    // 忽略發送者信息錯誤
+                    // 私聊消息处理（不需要群组ID）
+                    var messageContent = GetMessageContent(json);
+                    var messageText = messageContent.PlainText;
+                    var messageSegments = messageContent.Segments;
+                    var userId = json.GetNamedNumber("user_id", 0);
+                    chatId = (long)userId; // 聊天ID是好友ID
+                    actualSenderId = (long)userId; // 发送者也是好友ID
+
+                    // 从数据库获取好友名称
+                    senderName = DataAccess.GetFriendNameById(chatId);
+
+                    Debug.WriteLine($"OneBotAPIHandler: 收到私聊消息 - 好友: {senderName} (ID: {chatId}), 消息: {messageText}");
+
+                    // 使用安全的异步方法保存到数据库
+                    await SafeDataAccess.SaveMessageAsync(messageId, chatId, isGroup, messageText,
+                        "private", actualSenderId, senderName, false, currentTime, messageSegments);
+
+                    // 在 UI 线程中处理消息
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                        CoreDispatcherPriority.Normal, () =>
+                        {
+                            // 添加到聊天界面和数据库，传递正确的参数
+                            _mainView?.AddIncomingMessage(senderName, chatId, actualSenderId, messageText, false,
+                                messageSegments);
+
+                            // 更新聊天列表
+                            _mainView?.UpdateChatItem(senderName, messageText);
+
+                            Debug.WriteLine("OneBotAPIHandler: 私聊消息处理完成");
+                        });
                 }
-
-                if (string.IsNullOrEmpty(actualSenderName)) actualSenderName = "群成員";
-                senderName = actualSenderName;
-
-                Debug.WriteLine(
-                    $"OneBotAPIHandler: 收到群組消息 - 群組: {groupName} (ID: {chatId}), 發送者: {actualSenderName} (ID: {actualSenderId}), 消息: {messageText}");
-
-                // 保存到數據庫（使用服務器的 message_id 使用當前時間）
-                DataAccess.SaveMessage(messageId, chatId, isGroup, messageText,
-                    isGroup ? "group" : "private", actualSenderId, senderName, false, currentTime, messageSegments);
-
-
-                // 在 UI 線程中處理消息
-                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
-                    CoreDispatcherPriority.Normal, () =>
-                    {
-                        // 添加到聊天界面和數據庫，傳遞正確的參數
-                        _mainView?.AddIncomingMessage(actualSenderName, chatId, actualSenderId, messageText, true,
-                            messageSegments);
-
-                        // 更新聊天列表（顯示發送者: 消息內容）
-                        var displayMessage = $"{actualSenderName}: {messageText}";
-                        _mainView?.UpdateChatItem(groupName, displayMessage);
-
-                        Debug.WriteLine("OneBotAPIHandler: 群組消息處理完成");
-                    });
             }
-            else
+            catch (Exception ex)
             {
-                // 私聊消息處理（不需要群組ID）
-                var messageContent = GetMessageContent(json);
-                var messageText = messageContent.PlainText;
-                var messageSegments = messageContent.Segments;
-                var userId = json.GetNamedNumber("user_id", 0);
-                chatId = (long)userId; // 聊天ID是好友ID
-                actualSenderId = (long)userId; // 發送者也是好友ID
-
-                // 從數據庫獲取好友名稱
-                senderName = DataAccess.GetFriendNameById(chatId);
-
-                Debug.WriteLine($"OneBotAPIHandler: 收到私聊消息 - 好友: {senderName} (ID: {chatId}), 消息: {messageText}");
-
-                // 保存到數據庫（使用服務器的 message_id）
-                DataAccess.SaveMessage(messageId, chatId, isGroup, messageText,
-                    isGroup ? "group" : "private", actualSenderId, senderName, false, currentTime, messageSegments);
-
-                // 在 UI 線程中處理消息
-                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
-                    CoreDispatcherPriority.Normal, () =>
-                    {
-                        // 添加到聊天界面和數據庫，傳遞正確的參數
-                        _mainView?.AddIncomingMessage(senderName, chatId, actualSenderId, messageText, false,
-                            messageSegments);
-
-                        // 更新聊天列表
-                        _mainView?.UpdateChatItem(senderName, messageText);
-
-                        Debug.WriteLine("OneBotAPIHandler: 私聊消息處理完成");
-                    });
+                Debug.WriteLine($"OneBotAPIHandler: 处理接收消息时发生错误: {ex.Message}");
+                Debug.WriteLine($"错误堆栈: {ex.StackTrace}");
             }
         }
 
@@ -885,112 +892,121 @@ namespace NapcatUWP.Controls.APIHandler
         /// </summary>
         private async Task HandleSentMessage(JsonObject json, string messageType)
         {
-            var targetName = "";
-            var targetId = 0L;
-            var isGroup = messageType == "group";
-
-            // 安全地獲取消息內容和段落
-            MessageContentResult messageContent;
-            if (isGroup)
+            try
             {
-                // 群組消息：嘗試獲取群組ID
-                var groupId = json.GetNamedNumber("group_id", 0);
-                messageContent = GetMessageContent(json, (long)groupId);
-                targetId = (long)groupId;
-            }
-            else
-            {
-                // 私聊消息：不需要群組ID
-                messageContent = GetMessageContent(json);
-            }
+                var targetName = "";
+                var targetId = 0L;
+                var isGroup = messageType == "group";
 
-            var messageText = messageContent.PlainText;
-            var messageSegments = messageContent.Segments;
-
-            // 獲取消息ID和當前用戶ID
-            var messageId = (long)json.GetNamedNumber("message_id", 0);
-            var currentUserId = (long)json.GetNamedNumber("self_id", 0);
-
-            // 獲取目標信息
-            if (messageType == "group")
-            {
-                // 群組消息處理
-                // 從數據庫獲取群組名稱
-                targetName = DataAccess.GetGroupNameById(targetId);
-
-                Debug.WriteLine($"OneBotAPIHandler: 發送群組消息確認 - 群組: {targetName}, 消息: {messageText}");
-            }
-            else
-            {
-                // 私聊消息處理 - 修復邏輯
-                // 首先嘗試獲取 target_id（發送給誰）
-                var targetUserId = json.GetNamedNumber("target_id", 0);
-
-                if (targetUserId == 0)
+                // 安全地獲取消息內容和段落
+                MessageContentResult messageContent;
+                if (isGroup)
                 {
-                    // 如果沒有 target_id，嘗試從 user_id 獲取（但這可能是發送者ID）
-                    targetUserId = json.GetNamedNumber("user_id", 0);
-
-                    // 檢查是否是自己發送的消息（message_sent_type: "self"）
-                    var messageSentType = json.GetNamedString("message_sent_type", "");
-                    var selfId = json.GetNamedNumber("self_id", 0);
-
-                    if (messageSentType == "self" && targetUserId == selfId)
-                        // 這是自己發送的消息，需要從其他字段獲取目標ID
-                        // 檢查 raw 字段中的 peerUin
-                        if (json.ContainsKey("raw"))
-                            try
-                            {
-                                var rawObject = json.GetNamedObject("raw");
-                                if (rawObject.ContainsKey("peerUin"))
-                                {
-                                    var peerUin = rawObject.GetNamedString("peerUin", "");
-                                    if (long.TryParse(peerUin, out var peerUserId))
-                                    {
-                                        targetUserId = peerUserId;
-                                        Debug.WriteLine($"OneBotAPIHandler: 從 raw.peerUin 獲取目標ID: {targetUserId}");
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine($"OneBotAPIHandler: 解析 raw 字段時發生錯誤: {ex.Message}");
-                            }
+                    // 群組消息：嘗試獲取群組ID
+                    var groupId = json.GetNamedNumber("group_id", 0);
+                    messageContent = GetMessageContent(json, (long)groupId);
+                    targetId = (long)groupId;
+                }
+                else
+                {
+                    // 私聊消息：不需要群組ID
+                    messageContent = GetMessageContent(json);
                 }
 
-                targetId = (long)targetUserId;
+                var messageText = messageContent.PlainText;
+                var messageSegments = messageContent.Segments;
 
-                // 從數據庫獲取好友名稱
-                targetName = DataAccess.GetFriendNameById(targetId);
+                // 獲取消息ID和當前用戶ID
+                var messageId = (long)json.GetNamedNumber("message_id", 0);
+                var currentUserId = (long)json.GetNamedNumber("self_id", 0);
 
-                // 如果沒有找到好友名稱，使用默認名稱
-                if (targetName.StartsWith("用戶 ")) targetName = $"好友 {targetId}";
-
-                Debug.WriteLine($"OneBotAPIHandler: 發送私聊消息確認 - 目標好友: {targetName} (ID: {targetId}), 消息: {messageText}");
-            }
-
-            // 保存到數據庫（使用服務器的 message_id）- 發送的消息應該標記為 isFromMe = true
-            DataAccess.SaveMessage(messageId, targetId, isGroup, messageText,
-                isGroup ? "group" : "private", currentUserId, "我", true, DateTime.Now, messageSegments);
-
-            // 在 UI 線程中處理消息確認
-            await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
-                CoreDispatcherPriority.Normal, () =>
+                // 獲取目標信息
+                if (messageType == "group")
                 {
-                    // 檢查當前是否正在與目標聊天
-                    if (_mainView?.IsCurrentChat(targetId, isGroup) == true)
+                    // 群組消息處理
+                    // 從數據庫獲取群組名稱
+                    targetName = DataAccess.GetGroupNameById(targetId);
+
+                    Debug.WriteLine($"OneBotAPIHandler: 發送群組消息確認 - 群組: {targetName}, 消息: {messageText}");
+                }
+                else
+                {
+                    // 私聊消息處理 - 修復邏輯
+                    // 首先嘗試獲取 target_id（發送給誰）
+                    var targetUserId = json.GetNamedNumber("target_id", 0);
+
+                    if (targetUserId == 0)
                     {
-                        // 如果正在與目標聊天，添加消息到聊天界面
-                        _mainView?.AddOutgoingMessage("我", targetId, currentUserId, messageText, isGroup,
-                            messageSegments);
-                        Debug.WriteLine("OneBotAPIHandler: 已添加發送消息到當前聊天界面");
+                        // 如果沒有 target_id，嘗試從 user_id 獲取（但這可能是發送者ID）
+                        targetUserId = json.GetNamedNumber("user_id", 0);
+
+                        // 檢查是否是自己發送的消息（message_sent_type: "self"）
+                        var messageSentType = json.GetNamedString("message_sent_type", "");
+                        var selfId = json.GetNamedNumber("self_id", 0);
+
+                        if (messageSentType == "self" && targetUserId == selfId)
+                            // 這是自己發送的消息，需要從其他字段獲取目標ID
+                            // 檢查 raw 字段中的 peerUin
+                            if (json.ContainsKey("raw"))
+                                try
+                                {
+                                    var rawObject = json.GetNamedObject("raw");
+                                    if (rawObject.ContainsKey("peerUin"))
+                                    {
+                                        var peerUin = rawObject.GetNamedString("peerUin", "");
+                                        if (long.TryParse(peerUin, out var peerUserId))
+                                        {
+                                            targetUserId = peerUserId;
+                                            Debug.WriteLine($"OneBotAPIHandler: 從 raw.peerUin 獲取目標ID: {targetUserId}");
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine($"OneBotAPIHandler: 解析 raw 字段時發生錯誤: {ex.Message}");
+                                }
                     }
 
-                    // 更新聊天列表（不增加未讀數量）
-                    _mainView?.UpdateChatItem(targetName, $"我: {messageText}", false);
+                    targetId = (long)targetUserId;
 
-                    Debug.WriteLine("OneBotAPIHandler: 發送消息確認處理完成");
-                });
+                    // 從數據庫獲取好友名稱
+                    targetName = DataAccess.GetFriendNameById(targetId);
+
+                    // 如果沒有找到好友名稱，使用默認名稱
+                    if (targetName.StartsWith("用戶 ")) targetName = $"好友 {targetId}";
+
+                    Debug.WriteLine(
+                        $"OneBotAPIHandler: 發送私聊消息確認 - 目標好友: {targetName} (ID: {targetId}), 消息: {messageText}");
+                }
+
+                // 使用安全的異步方法保存到數據庫（發送的消息應該標记為 isFromMe = true）
+                await SafeDataAccess.SaveMessageAsync(messageId, targetId, isGroup, messageText,
+                    isGroup ? "group" : "private", currentUserId, "我", true, DateTime.Now, messageSegments);
+
+                // 在 UI 線程中處理消息確認
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
+                    {
+                        // 檢查當前是否正在與目標聊天
+                        if (_mainView?.IsCurrentChat(targetId, isGroup) == true)
+                        {
+                            // 如果正在與目標聊天，添加消息到聊天界面
+                            _mainView?.AddOutgoingMessage("我", targetId, currentUserId, messageText, isGroup,
+                                messageSegments);
+                            Debug.WriteLine("OneBotAPIHandler: 已添加發送消息到當前聊天界面");
+                        }
+
+                        // 更新聊天列表（不增加未讀數量）
+                        _mainView?.UpdateChatItem(targetName, $"我: {messageText}", false);
+
+                        Debug.WriteLine("OneBotAPIHandler: 發送消息確認處理完成");
+                    });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"OneBotAPIHandler: 處理發送消息時發生錯誤: {ex.Message}");
+                Debug.WriteLine($"錯誤堆疊: {ex.StackTrace}");
+            }
         }
 
         /// <summary>
@@ -1151,13 +1167,13 @@ namespace NapcatUWP.Controls.APIHandler
 
 
         /// <summary>
-        ///     处理好友列表响应 - 现在使用 JToken，並更新舊消息用戶信息
+        ///     处理好友列表响应 - 现在使用 JToken，並更新舊消息使用者信息
         /// </summary>
         private void FriendsWithCategoryHandler(ResponseEntity response)
         {
             try
             {
-                Debug.WriteLine("OneBotAPIHandler: 开始处理好友列表响应");
+                Debug.WriteLine("OneBotAPIHandler: 開始處理好友列表響應");
 
                 if (response.Status == "ok" && response.Data != null)
                 {
@@ -1165,7 +1181,7 @@ namespace NapcatUWP.Controls.APIHandler
 
                     try
                     {
-                        Debug.WriteLine($"OneBotAPIHandler: 好友数据类型: {response.Data.Type}");
+                        Debug.WriteLine($"OneBotAPIHandler: 好友數據類型: {response.Data.Type}");
 
                         if (response.Data.Type == JTokenType.Array)
                             foreach (var categoryToken in response.Data)
@@ -1181,9 +1197,9 @@ namespace NapcatUWP.Controls.APIHandler
                                         BuddyList = new List<FriendInfo>()
                                     };
 
-                                    Debug.WriteLine($"处理分类: {category.CategoryName}, ID: {category.CategoryId}");
+                                    Debug.WriteLine($"處理分類: {category.CategoryName}, ID: {category.CategoryId}");
 
-                                    // 解析该分类下的好友列表
+                                    // 解析該分類下的好友列表
                                     var buddyListToken = categoryToken["buddyList"];
                                     if (buddyListToken != null && buddyListToken.Type == JTokenType.Array)
                                     {
@@ -1193,7 +1209,7 @@ namespace NapcatUWP.Controls.APIHandler
                                             {
                                                 var friend = new FriendInfo
                                                 {
-                                                    // 使用正确的字段名
+                                                    // 使用正確的欄位名
                                                     UserId = buddyToken.Value<long>("user_id"),
                                                     BirthdayYear = buddyToken.Value<int>("birthday_year"),
                                                     BirthdayMonth = buddyToken.Value<int>("birthday_month"),
@@ -1207,7 +1223,7 @@ namespace NapcatUWP.Controls.APIHandler
                                                     Remark = buddyToken.Value<string>("remark") ?? "",
                                                     Level = buddyToken.Value<int>("level"),
 
-                                                    // 这些字段在新的 API 响应中不存在，设置为默认值
+                                                    // 這些欄位在新的 API 響應中不存在，設置為預設值
                                                     Qid = "",
                                                     LongNick = "",
                                                     RichTime = 0,
@@ -1224,61 +1240,61 @@ namespace NapcatUWP.Controls.APIHandler
                                             }
                                             catch (Exception ex)
                                             {
-                                                Debug.WriteLine($"OneBotAPIHandler: 解析单个好友时发生错误: {ex.Message}");
-                                                Debug.WriteLine($"好友数据: {buddyToken}");
+                                                Debug.WriteLine($"OneBotAPIHandler: 解析單個好友時發生錯誤: {ex.Message}");
+                                                Debug.WriteLine($"好友數據: {buddyToken}");
                                             }
 
-                                        Debug.WriteLine($"分类 {category.CategoryName} 解析了 {friendCount} 个好友");
+                                        Debug.WriteLine($"分類 {category.CategoryName} 解析了 {friendCount} 個好友");
                                     }
 
                                     categories.Add(category);
                                 }
                                 catch (Exception ex)
                                 {
-                                    Debug.WriteLine($"OneBotAPIHandler: 解析单个分类时发生错误: {ex.Message}");
+                                    Debug.WriteLine($"OneBotAPIHandler: 解析單個分類時發生錯誤: {ex.Message}");
                                 }
                         else
-                            Debug.WriteLine($"OneBotAPIHandler: 好友数据不是数组类型: {response.Data.Type}");
+                            Debug.WriteLine($"OneBotAPIHandler: 好友數據不是陣列類型: {response.Data.Type}");
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"OneBotAPIHandler: 解析好友数据时发生错误: {ex.Message}");
+                        Debug.WriteLine($"OneBotAPIHandler: 解析好友數據時發生錯誤: {ex.Message}");
                     }
 
-                    // 保存到数据库并刷新界面
+                    // 保存到數據庫並重新整理界面
                     Task.Run(async () =>
                     {
                         DataAccess.SaveFriendsWithCategories(categories);
-                        // 计算总好友数
+                        // 計算總好友數
                         var totalFriends = 0;
                         foreach (var category in categories)
                             if (category.BuddyList != null)
                                 totalFriends += category.BuddyList.Count;
 
-                        Debug.WriteLine($"OneBotAPIHandler: 成功处理并保存 {categories.Count} 个分类和 {totalFriends} 个好友");
+                        Debug.WriteLine($"OneBotAPIHandler: 成功處理並保存 {categories.Count} 個分類和 {totalFriends} 個好友");
 
-                        // 新增：更新舊消息中的用戶信息
+                        // 新增：更新舊消息中的使用者信息
                         DataAccess.UpdateUserInfoInMessages();
 
-                        // 数据保存完成后，在 UI 线程中刷新界面
+                        // 數據保存完成後，在 UI 線程中重新整理界面
                         await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
                             CoreDispatcherPriority.Normal, () =>
                             {
                                 _mainView?.RefreshContactsAndGroups();
                                 // 新增：更新聊天列表中的好友信息
                                 _mainView?.UpdateFriendInfoInChatList();
-                                Debug.WriteLine("已触发聊天列表好友信息更新");
+                                Debug.WriteLine("已觸發聊天列表好友信息更新");
                             });
                     });
                 }
                 else
                 {
-                    Debug.WriteLine($"OneBotAPIHandler: 好友列表请求失败 - Status: {response.Status}");
+                    Debug.WriteLine($"OneBotAPIHandler: 好友列表請求失敗 - Status: {response.Status}");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"OneBotAPIHandler: 处理好友列表响应时发生错误: {ex.Message}");
+                Debug.WriteLine($"OneBotAPIHandler: 處理好友列表響應時發生錯誤: {ex.Message}");
             }
         }
 

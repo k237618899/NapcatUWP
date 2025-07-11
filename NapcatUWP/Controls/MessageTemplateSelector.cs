@@ -1,4 +1,4 @@
-using System.Diagnostics;
+ï»¿using System.Diagnostics;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using NapcatUWP.Models;
@@ -14,26 +14,26 @@ namespace NapcatUWP.Controls
         {
             if (item is ChatMessage message)
             {
-                // ¸ÄßMµÄÅĞ”àß‰İ‹£º™z²éÊÇ·ñÓĞ·ÇÎÄ±¾µÄÏûÏ¢¶Î
+                // æ”¹é€²çš„åˆ¤æ–·é‚è¼¯ï¼šæª¢æŸ¥æ˜¯å¦æœ‰éæ–‡æœ¬çš„æ¶ˆæ¯æ®µ
                 if (message.Segments != null && message.Segments.Count > 0)
                 {
-                    // ™z²éÊÇ·ñ°üº¬·ÇÎÄ±¾¶Î
+                    // æª¢æŸ¥æ˜¯å¦åŒ…å«éæ–‡æœ¬æ®µ
                     foreach (var segment in message.Segments)
                         if (segment.Type != "text")
                         {
-                            Debug.WriteLine($"Ê¹ÓÃ¸»ÏûÏ¢Ä£°å£¬™zœyµ½ {segment.Type} ¶Î");
+                            Debug.WriteLine($"ä½¿ç”¨å¯Œæ¶ˆæ¯æ¨¡æ¿ï¼Œæª¢æ¸¬åˆ° {segment.Type} æ®µ");
                             return RichMessageTemplate ?? SimpleMessageTemplate;
                         }
 
-                    // Èç¹ûÖ»ÓĞÎÄ±¾¶Î£¬µ«¶Î”µ³¬ß^1£¬Ò²Ê¹ÓÃ¸»ÏûÏ¢Ä£°å£¨¿ÉÄÜÓĞ¶à‚€ÎÄ±¾Æ¬¶Î£©
+                    // å¦‚æœåªæœ‰æ–‡æœ¬æ®µï¼Œä½†æ®µæ•¸è¶…é1ï¼Œä¹Ÿä½¿ç”¨å¯Œæ¶ˆæ¯æ¨¡æ¿ï¼ˆå¯èƒ½æœ‰å¤šå€‹æ–‡æœ¬ç‰‡æ®µï¼‰
                     if (message.Segments.Count > 1)
                     {
-                        Debug.WriteLine($"Ê¹ÓÃ¸»ÏûÏ¢Ä£°å£¬™zœyµ½ {message.Segments.Count} ‚€¶Î");
+                        Debug.WriteLine($"ä½¿ç”¨å¯Œæ¶ˆæ¯æ¨¡æ¿ï¼Œæª¢æ¸¬åˆ° {message.Segments.Count} å€‹æ®µ");
                         return RichMessageTemplate ?? SimpleMessageTemplate;
                     }
                 }
 
-                Debug.WriteLine("Ê¹ÓÃº††ÎÏûÏ¢Ä£°å");
+                Debug.WriteLine("ä½¿ç”¨ç°¡å–®æ¶ˆæ¯æ¨¡æ¿");
             }
 
             return SimpleMessageTemplate;

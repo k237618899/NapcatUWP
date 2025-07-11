@@ -100,7 +100,7 @@ namespace NapcatUWP.Controls
         private ImageSegment CreateImageSegmentFromData(MessageSegment segment)
         {
             var imageSegment = new ImageSegment();
-            // 复制数据
+            // 複製數據
             foreach (var kvp in segment.Data)
             {
                 imageSegment.Data[kvp.Key] = kvp.Value;
@@ -211,7 +211,7 @@ namespace NapcatUWP.Controls
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            // 设置图片源
+            // 設置圖片源
             if (!string.IsNullOrEmpty(segment?.Url))
                 try
                 {
@@ -332,7 +332,7 @@ namespace NapcatUWP.Controls
                     VerticalAlignment = VerticalAlignment.Center
                 };
 
-                // 视频图标
+                // 視頻圖標
                 var videoIcon = new TextBlock
                 {
                     Text = "🎬",
@@ -342,17 +342,17 @@ namespace NapcatUWP.Controls
                     Foreground = new SolidColorBrush(Colors.White)
                 };
 
-                // 视频文本
+                // 視頻文字
                 var videoText = new TextBlock
                 {
-                    Text = "点击播放视频",
+                    Text = "點擊播放視頻",
                     FontSize = 12,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = new SolidColorBrush(Colors.LightGray)
                 };
 
-                // 播放按钮
+                // 播放按鈕
                 var playButton = new Button
                 {
                     Content = "▶ 播放",
@@ -365,7 +365,7 @@ namespace NapcatUWP.Controls
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
 
-                // 点击事件处理
+                // 點擊事件處理
                 playButton.Click += (sender, e) =>
                 {
                     try
@@ -376,19 +376,19 @@ namespace NapcatUWP.Controls
 
                         if (!string.IsNullOrEmpty(videoUrl))
                         {
-                            Debug.WriteLine($"MessageSegmentControl: 请求播放视频 - URL: {videoUrl}");
+                            Debug.WriteLine($"MessageSegmentControl: 請求播放視頻 - URL: {videoUrl}");
 
-                            // 触发视频播放事件
-                            VideoPlayRequested?.Invoke(this, new VideoPlayEventArgs(videoUrl, "视频播放"));
+                            // 觸發視頻播放事件
+                            VideoPlayRequested?.Invoke(this, new VideoPlayEventArgs(videoUrl, "視頻播放"));
                         }
                         else
                         {
-                            Debug.WriteLine("MessageSegmentControl: 视频URL为空，无法播放");
+                            Debug.WriteLine("MessageSegmentControl: 視頻URL為空，無法播放");
                         }
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"MessageSegmentControl: 处理视频播放点击时发生错误: {ex.Message}");
+                        Debug.WriteLine($"MessageSegmentControl: 處理視頻播放點擊時發生錯誤: {ex.Message}");
                     }
                 };
 
@@ -397,12 +397,12 @@ namespace NapcatUWP.Controls
                 videoContent.Children.Add(playButton);
                 videoContainer.Child = videoContent;
 
-                Debug.WriteLine($"MessageSegmentControl: 成功创建视频段UI - URL: {videoSegment.Url ?? videoSegment.File}");
+                Debug.WriteLine($"MessageSegmentControl: 成功創建視頻段UI - URL: {videoSegment.Url ?? videoSegment.File}");
                 return videoContainer;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"MessageSegmentControl: 创建视频段UI时发生错误: {ex.Message}");
+                Debug.WriteLine($"MessageSegmentControl: 創建視頻段UI時發生錯誤: {ex.Message}");
                 return CreateDefaultSegment(videoSegment);
             }
         }

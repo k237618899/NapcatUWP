@@ -34,6 +34,9 @@ namespace NapcatUWP.Pages
 
         private readonly Random _random = new Random();
 
+        // 在類的頂部添加字段
+        private DatabaseStatistics _databaseStatistics;
+
         // 添加當前帳號追蹤
         private string _currentAccount = "";
         private ChatItem _currentChat;
@@ -46,6 +49,12 @@ namespace NapcatUWP.Pages
             InitializeAvatorAndInfo();
             SidebarColumn.Width = new GridLength(0);
             UpdateOverlay();
+
+            // 初始化數據庫統計信息
+            _databaseStatistics = new DatabaseStatistics();
+
+            // 檢查數據庫健康狀態
+            CheckDatabaseHealth();
 
             // 獲取當前帳號
             _currentAccount = DataAccess.GetCurrentAccount();
@@ -88,6 +97,28 @@ namespace NapcatUWP.Pages
                 CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal,
                     () => { TestVideoPlayer(); });
             });
+        }
+
+        // 新增數據庫健康檢查方法
+        private async void CheckDatabaseHealth()
+        {
+            try
+            {
+                var isHealthy = await DatabaseManager.CheckDatabaseHealthAsync();
+                if (!isHealthy)
+                {
+                    Debug.WriteLine("數據庫健康檢查失敗，可能需要重新初始化");
+                    // 可以在這裡添加數據庫修復邏輯
+                }
+                else
+                {
+                    Debug.WriteLine("數據庫健康檢查通過");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"數據庫健康檢查時發生錯誤: {ex.Message}");
+            }
         }
 
         // 更新测试方法
@@ -713,7 +744,7 @@ namespace NapcatUWP.Pages
             ChatListView.Visibility = Visibility.Collapsed;
             ContactsScrollViewer.Visibility = Visibility.Collapsed;
             GroupListView.Visibility = Visibility.Collapsed;
-            SettingsGrid.Visibility = Visibility.Collapsed;
+            SettingsScrollViewer.Visibility = Visibility.Collapsed; // 修改這行
 
             // 顯示聊天界面
             ChatInterfaceGrid.Visibility = Visibility.Visible;
@@ -961,34 +992,40 @@ namespace NapcatUWP.Pages
         }
 
         // 加載聊天記錄
-        // 修改 LoadChatHistory 方法（用於非首次打開的情況）
+        // 修改 LoadChatHistory 方法
         private async void LoadChatHistory(ChatItem chatItem)
         {
             try
             {
-                // 從數據庫加載聊天記錄
-                var messages = DataAccess.GetChatMessages(chatItem.ChatId, chatItem.IsGroup);
+                // 使用安全的異步方法加載聊天記錄
+                var messages = await SafeDataAccess.GetChatMessagesAsync(chatItem.ChatId, chatItem.IsGroup);
 
-                foreach (var message in messages) _currentMessages.Add(message);
-
-                // 如果沒有歷史消息，顯示歡迎消息
-                if (messages.Count == 0)
-                {
-                    var welcomeMessage = new ChatMessage
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
                     {
-                        Content = chatItem.IsGroup ? "歡迎來到群組聊天！" : "開始聊天吧！",
-                        Timestamp = DateTime.Now.AddMinutes(-1),
-                        IsFromMe = false,
-                        SenderName = "系統",
-                        SenderId = -1,
-                        MessageType = "system"
-                    };
-                    _currentMessages.Add(welcomeMessage);
-                }
+                        foreach (var message in messages)
+                        {
+                            _currentMessages.Add(message);
+                        }
 
-                // 延遲滾動確保消息已加載
-                await Task.Delay(100);
-                EnsureScrollToBottom();
+                        // 如果沒有歷史消息，顯示歡迎消息
+                        if (messages.Count == 0)
+                        {
+                            var welcomeMessage = new ChatMessage
+                            {
+                                Content = chatItem.IsGroup ? "歡迎來到群組聊天！" : "開始聊天吧！",
+                                Timestamp = DateTime.Now.AddMinutes(-1),
+                                IsFromMe = false,
+                                SenderName = "系統",
+                                SenderId = -1,
+                                MessageType = "system"
+                            };
+                            _currentMessages.Add(welcomeMessage);
+                        }
+
+                        // 確保滾動到底部
+                        EnsureScrollToBottom();
+                    });
 
                 Debug.WriteLine($"從數據庫加載聊天記錄: {chatItem.Name}, 消息數: {messages.Count}");
             }
@@ -997,6 +1034,7 @@ namespace NapcatUWP.Pages
                 Debug.WriteLine($"加載聊天記錄錯誤: {ex.Message}");
             }
         }
+
 
         /// <summary>
         ///     <summary>
@@ -1053,7 +1091,7 @@ namespace NapcatUWP.Pages
         /// <summary>
         ///     刷新當前聊天的消息（例如，當群組成員信息更新後）
         /// </summary>
-        public void RefreshCurrentChatMessages()
+        public async void RefreshCurrentChatMessages()
         {
             try
             {
@@ -1061,35 +1099,39 @@ namespace NapcatUWP.Pages
 
                 Debug.WriteLine("RefreshCurrentChatMessages: 開始刷新當前聊天消息");
 
-                // 重新從數據庫加載當前聊天的所有消息
-                var allMessages = DataAccess.GetChatMessages(_currentChat.ChatId, _currentChat.IsGroup);
+                // 使用安全的異步方法重新加載消息
+                var allMessages = await SafeDataAccess.GetChatMessagesAsync(_currentChat.ChatId, _currentChat.IsGroup);
 
-                // 清空當前消息列表
-                _currentMessages.Clear();
-
-                // 重新添加所有消息
-                foreach (var message in allMessages.OrderBy(m => m.Timestamp))
-                {
-                    _currentMessages.Add(message);
-                }
-
-                // 如果沒有消息，顯示歡迎消息
-                if (_currentMessages.Count == 0)
-                {
-                    var welcomeMessage = new ChatMessage
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
                     {
-                        Content = _currentChat.IsGroup ? "歡迎來到群組聊天！" : "開始聊天吧！",
-                        Timestamp = DateTime.Now.AddMinutes(-1),
-                        IsFromMe = false,
-                        SenderName = "系統",
-                        SenderId = -1,
-                        MessageType = "system"
-                    };
-                    _currentMessages.Add(welcomeMessage);
-                }
+                        // 清空當前消息列表
+                        _currentMessages.Clear();
 
-                // 滾動到底部
-                EnsureScrollToBottom();
+                        // 重新添加所有消息
+                        foreach (var message in allMessages.OrderBy(m => m.Timestamp))
+                        {
+                            _currentMessages.Add(message);
+                        }
+
+                        // 如果沒有消息，顯示歡迎消息
+                        if (_currentMessages.Count == 0)
+                        {
+                            var welcomeMessage = new ChatMessage
+                            {
+                                Content = _currentChat.IsGroup ? "歡迎來到群組聊天！" : "開始聊天吧！",
+                                Timestamp = DateTime.Now.AddMinutes(-1),
+                                IsFromMe = false,
+                                SenderName = "系統",
+                                SenderId = -1,
+                                MessageType = "system"
+                            };
+                            _currentMessages.Add(welcomeMessage);
+                        }
+
+                        // 滾動到底部
+                        EnsureScrollToBottom();
+                    });
 
                 Debug.WriteLine("RefreshCurrentChatMessages: 消息刷新完成");
             }
@@ -1224,16 +1266,22 @@ namespace NapcatUWP.Pages
             }
         }
 
-        private void LoadContactsAndGroups()
+        // 修改 LoadContactsAndGroups 方法
+        private async void LoadContactsAndGroups()
         {
             try
             {
-                // 首先快速加載群組數據
-                var groups = DataAccess.GetAllGroups();
-                GroupItems = new ObservableCollection<GroupInfo>(groups);
-                GroupListView.ItemsSource = GroupItems;
+                // 使用安全的異步方法加載群組數據
+                var groups = await SafeDataAccess.GetAllGroupsAsync();
 
-                // 異步加載聯繫人數據，提升響應速度
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
+                    {
+                        GroupItems = new ObservableCollection<GroupInfo>(groups);
+                        GroupListView.ItemsSource = GroupItems;
+                    });
+
+                // 異步加載聯繫人數據
                 LoadContactsAsync();
             }
             catch (Exception ex)
@@ -1816,7 +1864,7 @@ namespace NapcatUWP.Pages
             ChatListView.Visibility = Visibility.Collapsed;
             ContactsScrollViewer.Visibility = Visibility.Collapsed;
             GroupListView.Visibility = Visibility.Collapsed;
-            SettingsGrid.Visibility = Visibility.Collapsed;
+            SettingsScrollViewer.Visibility = Visibility.Collapsed; // 修改這行
 
             // 更新搜索框提示文字
             switch (pageName)
@@ -1836,8 +1884,10 @@ namespace NapcatUWP.Pages
                     SearchTextBox.PlaceholderText = "Search (Groups)";
                     break;
                 case "Settings":
-                    SettingsGrid.Visibility = Visibility.Visible;
+                    SettingsScrollViewer.Visibility = Visibility.Visible; // 修改這行
                     SearchTextBox.PlaceholderText = "Search (Settings)";
+                    // 加載設定頁面時刷新統計信息
+                    LoadSettingsPage();
                     break;
             }
 
@@ -1933,6 +1983,182 @@ namespace NapcatUWP.Pages
             public FriendCategory Category { get; set; }
             public List<FriendInfo> FilteredFriends { get; set; }
         }
+
+        // 添加設定頁面相關的新方法
+
+        #region 設定頁面方法
+
+        /// <summary>
+        /// 加載設定頁面
+        /// </summary>
+        private void LoadSettingsPage()
+        {
+            try
+            {
+                Debug.WriteLine("加載設定頁面");
+                RefreshDatabaseStatistics();
+                RefreshRecentMessages();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"加載設定頁面時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 刷新數據庫統計信息
+        /// </summary>
+        private async void RefreshDatabaseStatistics()
+        {
+            try
+            {
+                Debug.WriteLine("開始刷新數據庫統計信息");
+
+                // 在後台線程獲取統計信息
+                await Task.Run(() => { _databaseStatistics = DataAccess.GetDatabaseStatistics(); });
+
+                // 更新UI
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
+                    {
+                        TotalMessagesText.Text = _databaseStatistics.TotalMessages.ToString();
+                        TotalGroupsText.Text = _databaseStatistics.TotalGroups.ToString();
+                        TotalFriendsText.Text = _databaseStatistics.TotalFriends.ToString();
+                        TotalCategoriesText.Text = _databaseStatistics.TotalCategories.ToString();
+                        TotalGroupMembersText.Text = _databaseStatistics.TotalGroupMembers.ToString();
+                        TotalChatListItemsText.Text = _databaseStatistics.TotalChatListItems.ToString();
+                        TotalSettingsText.Text = _databaseStatistics.TotalSettings.ToString();
+                        DatabaseSizeText.Text = _databaseStatistics.DatabaseSizeFormatted;
+
+                        Debug.WriteLine("數據庫統計信息UI更新完成");
+                    });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"刷新數據庫統計信息時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 刷新最近消息
+        /// </summary>
+        private async void RefreshRecentMessages()
+        {
+            try
+            {
+                Debug.WriteLine("開始刷新最近消息");
+
+                var recentMessages = await Task.Run(() => DataAccess.GetRecentChatMessages(10));
+
+                // 更新UI
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
+                    {
+                        RecentMessagesItemsControl.ItemsSource = recentMessages;
+                        Debug.WriteLine($"最近消息UI更新完成，共 {recentMessages.Count} 條消息");
+                    });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"刷新最近消息時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 刷新統計信息按鈕點擊事件
+        /// </summary>
+        private void RefreshStatsButton_Click(object sender, RoutedEventArgs e)
+        {
+            Debug.WriteLine("用戶點擊刷新統計信息按鈕");
+            RefreshDatabaseStatistics();
+        }
+
+        /// <summary>
+        /// 刷新最近消息按鈕點擊事件
+        /// </summary>
+        private void RefreshRecentMessagesButton_Click(object sender, RoutedEventArgs e)
+        {
+            Debug.WriteLine("用戶點擊刷新最近消息按鈕");
+            RefreshRecentMessages();
+        }
+
+        /// <summary>
+        /// 刪除所有聊天資料按鈕點擊事件
+        /// </summary>
+        private async void DeleteAllChatDataButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("用戶點擊刪除所有聊天資料按鈕");
+
+                // 顯示確認對話框
+                var dialog = new Windows.UI.Popups.MessageDialog(
+                    "此操作將永久刪除所有聊天消息和聊天列表，且無法恢復。\n\n您確定要繼續嗎？",
+                    "確認刪除");
+
+                dialog.Commands.Add(new Windows.UI.Popups.UICommand("確定", null, "confirm"));
+                dialog.Commands.Add(new Windows.UI.Popups.UICommand("取消", null, "cancel"));
+                dialog.DefaultCommandIndex = 1; // 默認選中取消
+
+                var result = await dialog.ShowAsync();
+
+                if (result.Id.ToString() == "confirm")
+                {
+                    Debug.WriteLine("用戶確認刪除操作");
+
+                    // 顯示加載狀態
+                    DeleteAllChatDataButton.IsEnabled = false;
+                    DeleteAllChatDataButton.Content = "正在刪除...";
+
+                    try
+                    {
+                        // 在後台線程執行刪除操作
+                        await Task.Run(() => { DataAccess.DeleteAllChatData(); });
+
+                        // 清空當前聊天列表
+                        ChatItems.Clear();
+
+                        // 刷新統計信息
+                        RefreshDatabaseStatistics();
+                        RefreshRecentMessages();
+
+                        // 顯示成功消息
+                        var successDialog = new Windows.UI.Popups.MessageDialog(
+                            "所有聊天資料已成功刪除！",
+                            "刪除完成");
+                        await successDialog.ShowAsync();
+
+                        Debug.WriteLine("聊天資料刪除操作完成");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"刪除聊天資料時發生錯誤: {ex.Message}");
+
+                        // 顯示錯誤消息
+                        var errorDialog = new Windows.UI.Popups.MessageDialog(
+                            $"刪除聊天資料時發生錯誤：{ex.Message}",
+                            "刪除失敗");
+                        await errorDialog.ShowAsync();
+                    }
+                    finally
+                    {
+                        // 恢復按鈕狀態
+                        DeleteAllChatDataButton.IsEnabled = true;
+                        DeleteAllChatDataButton.Content = "刪除所有聊天資料";
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("用戶取消刪除操作");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"處理刪除聊天資料請求時發生錯誤: {ex.Message}");
+            }
+        }
+
+        #endregion
 
         #region 聊天列表更新方法（修復群組和私聊識別）
 

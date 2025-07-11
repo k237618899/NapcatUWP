@@ -29,15 +29,15 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 播放视频
+        /// 播放視頻
         /// </summary>
-        /// <param name="videoUrl">视频URL</param>
-        /// <param name="title">视频标题</param>
-        public void PlayVideo(string videoUrl, string title = "视频播放器")
+        /// <param name="videoUrl">視頻URL</param>
+        /// <param name="title">視頻標題</param>
+        public void PlayVideo(string videoUrl, string title = "視頻播放器")
         {
             try
             {
-                Debug.WriteLine($"VideoPlayerControl: 开始播放视频 - URL: {videoUrl}, Title: {title}");
+                Debug.WriteLine($"VideoPlayerControl: 開始播放視頻 - URL: {videoUrl}, Title: {title}");
 
                 TitleTextBlock.Text = title;
                 LoadingRing.IsActive = true;
@@ -45,7 +45,7 @@ namespace NapcatUWP.Controls
                 ErrorTextBlock.Visibility = Visibility.Collapsed;
                 PlayPauseOverlay.Visibility = Visibility.Collapsed;
 
-                // 设置视频源
+                // 設置視頻源
                 if (Uri.TryCreate(videoUrl, UriKind.Absolute, out var uri))
                 {
                     VideoPlayer.Source = uri;
@@ -53,18 +53,18 @@ namespace NapcatUWP.Controls
                 }
                 else
                 {
-                    ShowError("无效的视频URL");
+                    ShowError("無效的視頻URL");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"VideoPlayerControl: 播放视频时发生错误: {ex.Message}");
-                ShowError($"播放失败: {ex.Message}");
+                Debug.WriteLine($"VideoPlayerControl: 播放視頻時發生錯誤: {ex.Message}");
+                ShowError($"播放失敗: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 显示错误信息
+        /// 顯示錯誤信息
         /// </summary>
         private void ShowError(string message)
         {
@@ -76,7 +76,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 格式化时间显示
+        /// 格式化時間顯示
         /// </summary>
         private string FormatTime(TimeSpan timeSpan)
         {
@@ -87,7 +87,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 更新播放/暂停按钮图标
+        /// 更新播放/暫停按鈕圖標
         /// </summary>
         private void UpdatePlayPauseIcon()
         {
@@ -97,7 +97,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 更新音量图标
+        /// 更新音量圖標
         /// </summary>
         private void UpdateVolumeIcon()
         {
@@ -110,7 +110,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 显示/隐藏控制栏
+        /// 顯示/隱藏控制欄
         /// </summary>
         private void ToggleControlsVisibility()
         {
@@ -122,7 +122,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 启动自动隐藏控制栏定时器
+        /// 啟動自動隱藏控制欄定時器
         /// </summary>
         private void StartHideControlsTimer()
         {
@@ -141,7 +141,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 启动进度更新定时器
+        /// 啟動進度更新定時器
         /// </summary>
         private void StartProgressUpdateTimer()
         {
@@ -154,7 +154,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 停止进度更新定时器
+        /// 停止進度更新定時器
         /// </summary>
         private void StopProgressUpdateTimer()
         {
@@ -163,7 +163,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 更新进度条
+        /// 更新進度條
         /// </summary>
         private void UpdateProgress()
         {
@@ -180,17 +180,17 @@ namespace NapcatUWP.Controls
             }
         }
 
-        #region 事件处理
+        #region 事件處理
 
         private void VideoPlayer_MediaOpened(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine("VideoPlayerControl: 视频打开成功");
+            Debug.WriteLine("VideoPlayerControl: 視頻打開成功");
 
             LoadingRing.IsActive = false;
             LoadingRing.Visibility = Visibility.Collapsed;
             PlayPauseOverlay.Visibility = Visibility.Visible;
 
-            // 设置进度条最大值
+            // 設置進度條最大值
             if (VideoPlayer.NaturalDuration.HasTimeSpan)
             {
                 var duration = VideoPlayer.NaturalDuration.TimeSpan;
@@ -204,22 +204,22 @@ namespace NapcatUWP.Controls
             StartProgressUpdateTimer();
         }
 
-        // 修复MediaFailed事件的参数类型
+        // 修復MediaFailed事件的參數類型
         private void VideoPlayer_MediaFailed(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine("VideoPlayerControl: 视频播放失败");
-            ShowError("播放失败: 媒体错误");
+            Debug.WriteLine("VideoPlayerControl: 視頻播放失敗");
+            ShowError("播放失敗: 媒體錯誤");
             StopProgressUpdateTimer();
         }
 
         private void VideoPlayer_MediaEnded(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine("VideoPlayerControl: 视频播放结束");
+            Debug.WriteLine("VideoPlayerControl: 視頻播放結束");
             UpdatePlayPauseIcon();
             ProgressSlider.Value = 0;
             CurrentTimeText.Text = "00:00";
 
-            // 显示播放按钮覆盖层
+            // 顯示播放按鈕覆蓋層
             PlayPauseOverlay.Visibility = Visibility.Visible;
             _isControlsVisible = true;
             ControlsPanel.Visibility = Visibility.Visible;
@@ -228,7 +228,7 @@ namespace NapcatUWP.Controls
 
         private void VideoPlayer_CurrentStateChanged(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine($"VideoPlayerControl: 播放状态变化 - {VideoPlayer.CurrentState}");
+            Debug.WriteLine($"VideoPlayerControl: 播放狀態變化 - {VideoPlayer.CurrentState}");
             UpdatePlayPauseIcon();
 
             if (VideoPlayer.CurrentState == MediaElementState.Playing)
@@ -254,7 +254,7 @@ namespace NapcatUWP.Controls
                 PlayPauseOverlay.Visibility = Visibility.Collapsed;
             }
 
-            // 重置自动隐藏定时器
+            // 重置自動隱藏定時器
             if (_isControlsVisible)
                 StartHideControlsTimer();
         }
@@ -270,13 +270,13 @@ namespace NapcatUWP.Controls
         {
             if (_isMuted)
             {
-                // 取消静音
+                // 取消靜音
                 VideoPlayer.Volume = _previousVolume;
                 _isMuted = false;
             }
             else
             {
-                // 静音
+                // 靜音
                 _previousVolume = VideoPlayer.Volume;
                 VideoPlayer.Volume = 0;
                 _isMuted = true;
@@ -284,7 +284,7 @@ namespace NapcatUWP.Controls
 
             UpdateVolumeIcon();
 
-            // 重置自动隐藏定时器
+            // 重置自動隱藏定時器
             if (_isControlsVisible)
                 StartHideControlsTimer();
         }
@@ -303,33 +303,33 @@ namespace NapcatUWP.Controls
         private void ProgressSlider_PointerPressed(object sender, PointerRoutedEventArgs e)
         {
             _isUserDragging = true;
-            _hideControlsTimer?.Cancel(); // 拖拽时停止自动隐藏
+            _hideControlsTimer?.Cancel(); // 拖拽時停止自動隱藏
         }
 
         private void ProgressSlider_PointerReleased(object sender, PointerRoutedEventArgs e)
         {
             _isUserDragging = false;
 
-            // 重新启动自动隐藏定时器
+            // 重新啟動自動隱藏定時器
             if (_isControlsVisible && VideoPlayer.CurrentState == MediaElementState.Playing)
                 StartHideControlsTimer();
         }
 
         private void VideoPlayer_Tapped(object sender, TappedRoutedEventArgs e)
         {
-            // 点击视频区域显示/隐藏控制栏
+            // 點擊視頻區域顯示/隱藏控制欄
             ToggleControlsVisibility();
         }
 
         private void PlayerContainer_Tapped(object sender, TappedRoutedEventArgs e)
         {
-            // 阻止事件冒泡到背景层
+            // 阻止事件冒泡到背景層
             e.Handled = true;
         }
 
         private void OverlayGrid_Tapped(object sender, TappedRoutedEventArgs e)
         {
-            // 点击背景区域关闭播放器
+            // 點擊背景區域關閉播放器
             ClosePlayer();
         }
 
@@ -347,32 +347,32 @@ namespace NapcatUWP.Controls
         {
             try
             {
-                Debug.WriteLine("VideoPlayerControl: 关闭播放器");
+                Debug.WriteLine("VideoPlayerControl: 關閉播放器");
 
                 // 停止播放
                 VideoPlayer.Stop();
                 VideoPlayer.Source = null;
 
-                // 停止定时器
+                // 停止定時器
                 _hideControlsTimer?.Cancel();
                 StopProgressUpdateTimer();
 
-                // 触发关闭事件
+                // 觸發關閉事件
                 CloseRequested?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"VideoPlayerControl: 关闭播放器时发生错误: {ex.Message}");
+                Debug.WriteLine($"VideoPlayerControl: 關閉播放器時發生錯誤: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 处理返回键
+        /// 處理返回鍵
         /// </summary>
         public bool HandleBackButton()
         {
             ClosePlayer();
-            return true; // 表示已处理
+            return true; // 表示已處理
         }
     }
 }

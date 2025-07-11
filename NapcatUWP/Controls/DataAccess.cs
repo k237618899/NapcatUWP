@@ -871,7 +871,6 @@ namespace NapcatUWP.Controls
                                         {
                                             segments = MessageSegmentParser.ParseMessageArray(rawSegments,
                                                 isGroup ? chatId : 0);
-                                            Debug.WriteLine($"重新解析消息段: {segments.Count} 個段");
                                         }
                                     }
                                 }
@@ -896,7 +895,7 @@ namespace NapcatUWP.Controls
                             var senderId = Convert.ToInt64(query["SenderId"]);
                             var isFromMe = Convert.ToInt32(query["IsFromMe"]) == 1;
 
-                            // 動態生成發送者名稱，而不是直接使用數據庫中存儲的名稱
+                            // 動態生成發送者名稱，優先使用最新的用戶信息
                             var senderName = "";
                             if (isFromMe)
                             {
@@ -904,45 +903,53 @@ namespace NapcatUWP.Controls
                             }
                             else if (isGroup)
                             {
-                                // 群組消息：嘗試從群組成員信息獲取最新的顯示名稱
+                                // 群組消息：優先從群組成員信息獲取最新的顯示名稱
                                 var memberInfo = GetGroupMember(chatId, senderId);
                                 if (memberInfo != null)
+                                {
                                     senderName = memberInfo.GetDisplayName();
+                                }
                                 else
+                                {
                                     // 如果沒有群組成員信息，嘗試從好友列表獲取
-                                    senderName = GetFriendNameById(senderId);
+                                    var friendName = GetFriendNameById(senderId);
+                                    senderName = friendName.StartsWith("用戶 ")
+                                        ? Convert.ToString(query["SenderName"]) ?? friendName
+                                        : friendName;
+                                }
                             }
                             else
                             {
                                 // 私聊消息：從好友列表獲取
-                                senderName = GetFriendNameById(senderId);
+                                var friendName = GetFriendNameById(senderId);
+                                senderName = friendName.StartsWith("用戶 ")
+                                    ? Convert.ToString(query["SenderName"]) ?? friendName
+                                    : friendName;
                             }
 
-                            // 如果仍然沒有找到合適的名稱，使用默認格式
+                            // 如果仍然沒有找到合適的名稱，使用數據庫中保存的名稱或默認格式
                             if (string.IsNullOrEmpty(senderName) || senderName.StartsWith("用戶 "))
-                                senderName = isFromMe ? "我" : $"用戶 {senderId}";
+                            {
+                                var dbSenderName = Convert.ToString(query["SenderName"]) ?? "";
+                                senderName = !string.IsNullOrEmpty(dbSenderName) && !dbSenderName.StartsWith("用戶 ")
+                                    ? dbSenderName
+                                    : (isFromMe ? "我" : $"用戶 {senderId}");
+                            }
 
                             var chatMessage = new ChatMessage
                             {
                                 Content = Convert.ToString(query["Content"]) ?? "",
                                 MessageType = Convert.ToString(query["MessageType"]) ?? "text",
                                 SenderId = senderId,
-                                SenderName = senderName, // 使用動態生成的名稱
+                                SenderName = senderName,
                                 IsFromMe = isFromMe,
-                                Timestamp = timestamp // 使用修正後的時間戳
+                                Timestamp = timestamp
                             };
 
                             // 最後設置消息段，這將觸發屬性更新
                             chatMessage.Segments = segments;
 
                             messages.Add(chatMessage);
-
-                            // 調試信息：檢查段落類型
-                            var segmentTypes = new List<string>();
-                            foreach (var segment in segments) segmentTypes.Add(segment.Type);
-                            var segmentTypesString = string.Join(", ", segmentTypes);
-                            Debug.WriteLine(
-                                $"加載消息: Sender={chatMessage.SenderName}, HasRichContent={chatMessage.HasRichContent}, SegmentTypes=[{segmentTypesString}]");
                         }
                     }
 
@@ -1744,7 +1751,7 @@ namespace NapcatUWP.Controls
         #region 用戶信息更新方法
 
         /// <summary>
-        ///     更新舊消息中的用戶信息
+        ///     更新舊消息中的用戶信息 - 改進版，優先使用card名稱
         /// </summary>
         public static void UpdateUserInfoInMessages()
         {
@@ -1755,11 +1762,11 @@ namespace NapcatUWP.Controls
                 {
                     db.Open();
 
-                    // 獲取所有需要更新的消息（顯示為"用戶 xxxx"格式的消息）
+                    // 獲取所有需要更新的消息
                     var selectOldMessagesCommand = new SqliteCommand(@"
-                        SELECT DISTINCT ChatId, SenderId, IsGroup, SenderName 
-                        FROM Messages 
-                        WHERE SenderName LIKE '用戶 %' AND IsFromMe = 0", db);
+                SELECT DISTINCT ChatId, SenderId, IsGroup, SenderName 
+                FROM Messages 
+                WHERE IsFromMe = 0", db);
 
                     var messagesToUpdate = new List<(long ChatId, long SenderId, bool IsGroup, string OldSenderName)>();
 
@@ -1776,22 +1783,22 @@ namespace NapcatUWP.Controls
                         }
                     }
 
-                    Debug.WriteLine($"找到 {messagesToUpdate.Count} 條需要更新用戶信息的消息");
+                    Debug.WriteLine($"找到 {messagesToUpdate.Count} 條需要檢查用戶信息的消息");
 
                     var updatedCount = 0;
                     var updateCommand = new SqliteCommand(@"
-                        UPDATE Messages 
-                        SET SenderName = @newSenderName 
-                        WHERE ChatId = @chatId AND SenderId = @senderId AND IsGroup = @isGroup AND SenderName = @oldSenderName",
+                UPDATE Messages 
+                SET SenderName = @newSenderName 
+                WHERE ChatId = @chatId AND SenderId = @senderId AND IsGroup = @isGroup AND IsFromMe = 0",
                         db);
 
                     foreach (var (chatId, senderId, isGroup, oldSenderName) in messagesToUpdate)
                     {
-                        string newSenderName;
+                        string newSenderName = "";
 
                         if (isGroup)
                         {
-                            // 群組消息：優先從群組成員信息獲取
+                            // 群組消息：優先從群組成員信息獲取card名稱
                             var memberInfo = GetGroupMember(chatId, senderId);
                             if (memberInfo != null)
                             {
@@ -1800,26 +1807,31 @@ namespace NapcatUWP.Controls
                             else
                             {
                                 // 沒有群組成員信息，嘗試從好友列表獲取
-                                newSenderName = GetFriendNameById(senderId);
+                                var friendName = GetFriendNameById(senderId);
+                                if (!friendName.StartsWith("用戶 "))
+                                {
+                                    newSenderName = friendName;
+                                }
                             }
                         }
                         else
                         {
                             // 私聊消息：從好友列表獲取
-                            newSenderName = GetFriendNameById(senderId);
+                            var friendName = GetFriendNameById(senderId);
+                            if (!friendName.StartsWith("用戶 "))
+                            {
+                                newSenderName = friendName;
+                            }
                         }
 
-                        // 如果找到了有效的用戶名，且與舊名稱不同，則更新
-                        if (!string.IsNullOrEmpty(newSenderName) &&
-                            !newSenderName.StartsWith("用戶 ") &&
-                            newSenderName != oldSenderName)
+                        // 只有當找到了更好的名稱時才更新
+                        if (!string.IsNullOrEmpty(newSenderName) && newSenderName != oldSenderName)
                         {
                             updateCommand.Parameters.Clear();
                             updateCommand.Parameters.AddWithValue("@newSenderName", newSenderName);
                             updateCommand.Parameters.AddWithValue("@chatId", chatId);
                             updateCommand.Parameters.AddWithValue("@senderId", senderId);
                             updateCommand.Parameters.AddWithValue("@isGroup", isGroup ? 1 : 0);
-                            updateCommand.Parameters.AddWithValue("@oldSenderName", oldSenderName);
 
                             var affectedRows = updateCommand.ExecuteNonQuery();
                             if (affectedRows > 0)
@@ -1915,6 +1927,164 @@ namespace NapcatUWP.Controls
                 Debug.WriteLine($"處理時間戳時發生錯誤: {ex.Message}");
                 return originalTimestamp;
             }
+        }
+
+        #endregion
+
+        // 在 DataAccess.cs 文件的末尾添加以下方法
+
+        #region 數據庫管理和統計
+
+        /// <summary>
+        /// 刪除所有聊天資料
+        /// </summary>
+        public static void DeleteAllChatData()
+        {
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    using (var transaction = db.BeginTransaction())
+                    {
+                        try
+                        {
+                            // 刪除所有聊天消息
+                            var deleteMessagesCmd = new SqliteCommand("DELETE FROM Messages", db, transaction);
+                            var deletedMessages = deleteMessagesCmd.ExecuteNonQuery();
+
+                            // 刪除所有聊天列表緩存
+                            var deleteChatListCmd = new SqliteCommand("DELETE FROM ChatListCache", db, transaction);
+                            var deletedChatList = deleteChatListCmd.ExecuteNonQuery();
+
+                            transaction.Commit();
+
+                            Debug.WriteLine($"成功刪除所有聊天資料：{deletedMessages} 條消息，{deletedChatList} 個聊天列表項");
+                        }
+                        catch (Exception ex)
+                        {
+                            transaction.Rollback();
+                            Debug.WriteLine($"刪除聊天資料時發生錯誤，已回滾：{ex.Message}");
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"刪除所有聊天資料錯誤：{ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 獲取數據庫統計信息
+        /// </summary>
+        public static DatabaseStatistics GetDatabaseStatistics()
+        {
+            var stats = new DatabaseStatistics();
+
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    // 獲取消息數量
+                    var messagesCountCmd = new SqliteCommand("SELECT COUNT(*) FROM Messages", db);
+                    stats.TotalMessages = Convert.ToInt32(messagesCountCmd.ExecuteScalar());
+
+                    // 獲取群組數量
+                    var groupsCountCmd = new SqliteCommand("SELECT COUNT(*) FROM Groups", db);
+                    stats.TotalGroups = Convert.ToInt32(groupsCountCmd.ExecuteScalar());
+
+                    // 獲取好友數量
+                    var friendsCountCmd = new SqliteCommand("SELECT COUNT(*) FROM Friends", db);
+                    stats.TotalFriends = Convert.ToInt32(friendsCountCmd.ExecuteScalar());
+
+                    // 獲取好友分類數量
+                    var categoriesCountCmd = new SqliteCommand("SELECT COUNT(*) FROM FriendCategories", db);
+                    stats.TotalCategories = Convert.ToInt32(categoriesCountCmd.ExecuteScalar());
+
+                    // 獲取群組成員數量
+                    var groupMembersCountCmd = new SqliteCommand("SELECT COUNT(*) FROM GroupMembers", db);
+                    stats.TotalGroupMembers = Convert.ToInt32(groupMembersCountCmd.ExecuteScalar());
+
+                    // 獲取聊天列表緩存數量
+                    var chatListCountCmd = new SqliteCommand("SELECT COUNT(*) FROM ChatListCache", db);
+                    stats.TotalChatListItems = Convert.ToInt32(chatListCountCmd.ExecuteScalar());
+
+                    // 獲取設定項數量
+                    var settingsCountCmd = new SqliteCommand("SELECT COUNT(*) FROM AppSettings", db);
+                    stats.TotalSettings = Convert.ToInt32(settingsCountCmd.ExecuteScalar());
+
+                    // 獲取數據庫文件大小
+                    var fileInfo = new FileInfo(dbpath);
+                    stats.DatabaseSize = fileInfo.Length;
+
+                    Debug.WriteLine(
+                        $"獲取數據庫統計信息成功：消息 {stats.TotalMessages} 條，群組 {stats.TotalGroups} 個，好友 {stats.TotalFriends} 個");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"獲取數據庫統計信息錯誤：{ex.Message}");
+            }
+
+            return stats;
+        }
+
+        /// <summary>
+        /// 獲取最近的聊天消息（用於展示）
+        /// </summary>
+        public static List<ChatMessage> GetRecentChatMessages(int limit = 10)
+        {
+            var messages = new List<ChatMessage>();
+
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    var selectCommand = new SqliteCommand(@"
+                SELECT * FROM Messages 
+                ORDER BY Timestamp DESC 
+                LIMIT @limit", db);
+                    selectCommand.Parameters.AddWithValue("@limit", limit);
+
+                    using (var query = selectCommand.ExecuteReader())
+                    {
+                        while (query.Read())
+                        {
+                            var timestampStr = Convert.ToString(query["Timestamp"]);
+                            DateTime.TryParse(timestampStr, out var timestamp);
+
+                            var message = new ChatMessage
+                            {
+                                Content = Convert.ToString(query["Content"]) ?? "",
+                                MessageType = Convert.ToString(query["MessageType"]) ?? "text",
+                                SenderId = Convert.ToInt64(query["SenderId"]),
+                                SenderName = Convert.ToString(query["SenderName"]) ?? "",
+                                IsFromMe = Convert.ToInt32(query["IsFromMe"]) == 1,
+                                Timestamp = timestamp
+                            };
+
+                            messages.Add(message);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"獲取最近聊天消息錯誤：{ex.Message}");
+            }
+
+            return messages;
         }
 
         #endregion
