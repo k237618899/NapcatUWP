@@ -45,7 +45,9 @@
                             CornerRadius="12,12,12,4"
                             Padding="12,8">
                                 <controls:MessageSegmentControl Segments="{Binding Segments}" 
-                                VideoPlayRequested="MessageSegmentControl_VideoPlayRequested"/>
+                                                                VideoPlayRequested="MessageSegmentControl_VideoPlayRequested"
+                                                                ImageViewRequested="MessageSegmentControl_ImageViewRequested"
+                                                                AudioPlayRequested="MessageSegmentControl_AudioPlayRequested"/>
                             </Border>
 
                             <!-- 時間戳 -->
@@ -75,7 +77,9 @@
                             CornerRadius="12,12,4,12"
                             Padding="12,8">
                                 <controls:MessageSegmentControl Segments="{Binding Segments}" 
-                                        VideoPlayRequested="MessageSegmentControl_VideoPlayRequested"/>
+                                                                VideoPlayRequested="MessageSegmentControl_VideoPlayRequested"
+                                                                ImageViewRequested="MessageSegmentControl_ImageViewRequested"
+                                                                AudioPlayRequested="MessageSegmentControl_AudioPlayRequested"/>
                             </Border>
 
                             <!-- 時間戳 -->
@@ -176,736 +180,739 @@
         </controls:MessageTemplateSelector>
     </Page.Resources>
 
-    <!-- 回到Grid作为根容器，移除有问题的Canvas和RelativeSource绑定 -->
-    <Grid x:Name="RootGrid">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition x:Name="SidebarColumn" Width="0" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+    <!-- 使用 Grid 作為根容器，並使用 Canvas.ZIndex 確保層次順序 -->
+    <Grid x:Name="RootContainer">
+        <!-- 主要內容層 - ZIndex 較低 -->
+        <Grid x:Name="RootGrid" Canvas.ZIndex="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="0" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-        <!--  側邊欄  -->
-        <Grid Grid.Column="0" Background="#FF2D3E50">
-            <StackPanel>
-                <StackPanel Margin="8,32,0,16" Orientation="Horizontal">
-                    <Ellipse
-                        Width="40"
-                        Height="40"
-                        Fill="LightBlue" />
-                    <StackPanel Margin="8,0,0,0" Visibility="{Binding ElementName=SidebarColumn, Path=Width.Value, Converter={StaticResource SidebarWidthToVisibilityConverter}}">
-                        <TextBlock
-                            x:Name="TextUser"
-                            FontWeight="Bold"
-                            Foreground="White"
-                            Text="Jacob Hsu" />
-                        <TextBlock
-                            x:Name="TextID"
-                            FontSize="12"
-                            Foreground="White"
-                            Text="+1 702 551 6183" />
-                    </StackPanel>
-                </StackPanel>
-                <ListView
-                    x:Name="SidebarListView"
-                    Margin="0,8,0,0"
-                    SelectionChanged="SidebarListView_SelectionChanged"
-                    Visibility="{Binding ElementName=SidebarColumn, Path=Width.Value, Converter={StaticResource SidebarWidthToVisibilityConverter}}">
-                    <ListViewItem x:Name="ChatsItem" Content="Chats" Foreground="White" Tag="Chats" />
-                    <ListViewItem x:Name="ContactsItem" Content="Contacts" Foreground="White" Tag="Contacts" />
-                    <ListViewItem x:Name="GroupsItem" Content="Groups" Foreground="White" Tag="Groups" />
-                    <ListViewItem x:Name="SettingsItem" Content="Settings" Foreground="White" Tag="Settings" />
-                    <ListViewItem x:Name="LogOutItem" Content="Log Out" Foreground="DarkRed" Tag="LogOut" />
-                </ListView>
-            </StackPanel>
-        </Grid>
-
-        <!-- 主內容區域 -->
-        <Grid
-            x:Name="MainContentGrid"
-            Grid.Column="1"
-            Background="#FF23272A">
-
-            <Rectangle
-                x:Name="OverlayRect"
-                Canvas.ZIndex="99"
-                Fill="Transparent"
-                PointerPressed="OverlayRect_PointerPressed"
-                Visibility="Collapsed" />
-
-            <!-- 頂部搜索欄和其他頁面保持不變 -->
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-                <!-- 搜索欄 -->
-                <StackPanel
-                    Grid.Row="0"
-                    Padding="12,8"
-                    Background="#FF23272A"
-                    Orientation="Horizontal">
-                    <Button
-                        Width="40"
-                        Height="40"
-                        Background="Transparent"
-                        Click="HamburgerButton_Click">
-                        <FontIcon
-                            FontFamily="Segoe MDL2 Assets"
-                            FontSize="20"
-                            Foreground="White"
-                            Glyph="&#xE700;" />
-                    </Button>
-                    <TextBox
-                        x:Name="SearchTextBox"
-                        Width="300"
-                        Height="40"
-                        Margin="12,0,0,0"
-                        Padding="0,4,0,0"
-                        VerticalContentAlignment="Center"
-                        PlaceholderText="Search (Chats)"
-                        TextChanged="SearchTextBox_TextChanged" />
-                </StackPanel>
-
-                <!--  多頁面內容區域  -->
-                <Grid Grid.Row="1">
-                    <!--  聊天列表頁面  -->
-                    <ListView
-                        x:Name="ChatListView"
-                        Margin="0,8,0,0"
-                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                        ScrollViewer.HorizontalScrollMode="Disabled"
-                        ScrollViewer.VerticalScrollBarVisibility="Auto"
-                        ScrollViewer.VerticalScrollMode="Enabled"
-                        Visibility="Visible">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Height="72" Margin="0,0,0,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="64" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <!--  頭像  -->
-                                    <Ellipse
-                                        Width="48"
-                                        Height="48"
-                                        Margin="8"
-                                        VerticalAlignment="Center"
-                                        Fill="{Binding AvatarColor}" />
-
-                                    <!--  中間內容區  -->
-                                    <Grid
-                                        Grid.Column="1"
-                                        Margin="0,8,8,8"
-                                        VerticalAlignment="Top">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-
-                                        <TextBlock
-                                            Grid.Row="0"
-                                            Height="20"
-                                            VerticalAlignment="Center"
-                                            FontWeight="Bold"
-                                            Foreground="White"
-                                            Text="{Binding Name}"
-                                            TextTrimming="CharacterEllipsis" />
-
-                                        <TextBlock
-                                            Grid.Row="1"
-                                            MaxHeight="36"
-                                            Margin="0,2,0,0"
-                                            VerticalAlignment="Top"
-                                            FontSize="12"
-                                            Foreground="LightGray"
-                                            LineHeight="18"
-                                            MaxLines="2"
-                                            Text="{Binding LastMessage}"
-                                            TextTrimming="CharacterEllipsis"
-                                            TextWrapping="Wrap" />
-                                    </Grid>
-
-                                    <!--  右側內容區  -->
-                                    <Grid
-                                        Grid.Column="2"
-                                        Width="80"
-                                        Margin="0,8,12,8"
-                                        VerticalAlignment="Top">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-
-                                        <TextBlock
-                                            Grid.Row="0"
-                                            Margin="0,0,0,4"
-                                            HorizontalAlignment="Right"
-                                            FontSize="12"
-                                            Foreground="LightGray"
-                                            Text="{Binding LastTime}" />
-
-                                        <Border
-                                            Grid.Row="1"
-                                            MinWidth="20"
-                                            MinHeight="20"
-                                            HorizontalAlignment="Right"
-                                            Background="#FF7E6CA8"
-                                            CornerRadius="10"
-                                            Visibility="{Binding UnreadCount, Converter={StaticResource UnreadCountToVisibilityConverter}}">
-                                            <TextBlock
-                                                Margin="6,2"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"
-                                                FontSize="11"
-                                                FontWeight="Bold"
-                                                Foreground="White"
-                                                Text="{Binding UnreadCount}" />
-                                        </Border>
-                                    </Grid>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-
-                        <ListView.ItemContainerStyle>
-                            <Style TargetType="ListViewItem">
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                <Setter Property="Padding" Value="0" />
-                                <Setter Property="Margin" Value="0" />
-                                <Setter Property="Background" Value="Transparent" />
-                                <Setter Property="BorderThickness" Value="0" />
-                            </Style>
-                        </ListView.ItemContainerStyle>
-                    </ListView>
-
-                    <!--  好友列表頁面  -->
-                    <ScrollViewer
-                        x:Name="ContactsScrollViewer"
-                        Margin="0,8,0,0"
-                        HorizontalScrollBarVisibility="Disabled"
-                        VerticalScrollBarVisibility="Auto"
-                        Visibility="Collapsed">
-                        <StackPanel x:Name="ContactsStackPanel">
-                            <!-- 好友分類將在代碼中動態添加 -->
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <!--  群組列表頁面  -->
-                    <ListView
-                        x:Name="GroupListView"
-                        Margin="0,8,0,0"
-                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                        ScrollViewer.HorizontalScrollMode="Disabled"
-                        ScrollViewer.VerticalScrollBarVisibility="Auto"
-                        ScrollViewer.VerticalScrollMode="Enabled"
-                        Visibility="Collapsed">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Height="72" Margin="0,0,0,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="64" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <!--  群組頭像  -->
-                                    <Border
-                                        Width="48"
-                                        Height="48"
-                                        Margin="8"
-                                        VerticalAlignment="Center"
-                                        Background="#FF50C878"
-                                        CornerRadius="8">
-                                        <FontIcon
-                                            FontFamily="Segoe MDL2 Assets"
-                                            FontSize="24"
-                                            Foreground="White"
-                                            Glyph="&#xE125;" />
-                                    </Border>
-
-                                    <!--  群組信息  -->
-                                    <Grid
-                                        Grid.Column="1"
-                                        Margin="0,8,8,8"
-                                        VerticalAlignment="Top">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-
-                                        <TextBlock
-                                            Grid.Row="0"
-                                            Height="20"
-                                            VerticalAlignment="Center"
-                                            FontWeight="Bold"
-                                            Foreground="White"
-                                            Text="{Binding GroupName}"
-                                            TextTrimming="CharacterEllipsis" />
-
-                                        <TextBlock
-                                            Grid.Row="1"
-                                            MaxHeight="36"
-                                            Margin="0,2,0,0"
-                                            VerticalAlignment="Top"
-                                            FontSize="12"
-                                            Foreground="LightGray"
-                                            LineHeight="18"
-                                            MaxLines="2"
-                                            TextTrimming="CharacterEllipsis"
-                                            TextWrapping="Wrap">
-                                            <Run Text="{Binding MemberCount}" />
-                                            <Run Text="/" />
-                                            <Run Text="{Binding MaxMemberCount}" />
-                                            <Run Text=" 成員" />
-                                        </TextBlock>
-                                    </Grid>
-
-                                    <!--  群組狀態  -->
-                                    <Grid
-                                        Grid.Column="2"
-                                        Width="80"
-                                        Margin="0,8,12,8"
-                                        VerticalAlignment="Center">
-                                        <Border
-                                            MinWidth="60"
-                                            MinHeight="20"
-                                            HorizontalAlignment="Right"
-                                            Background="#FF3498DB"
-                                            CornerRadius="10"
-                                            Visibility="{Binding GroupAllShut, Converter={StaticResource UnreadCountToVisibilityConverter}}">
-                                            <TextBlock
-                                                Margin="8,2"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"
-                                                FontSize="10"
-                                                FontWeight="Bold"
-                                                Foreground="White"
-                                                Text="全員禁言" />
-                                        </Border>
-                                    </Grid>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-
-                        <ListView.ItemContainerStyle>
-                            <Style TargetType="ListViewItem">
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                <Setter Property="Padding" Value="0" />
-                                <Setter Property="Margin" Value="0" />
-                                <Setter Property="Background" Value="Transparent" />
-                                <Setter Property="BorderThickness" Value="0" />
-                            </Style>
-                        </ListView.ItemContainerStyle>
-                    </ListView>
-
-                    <!--  設置頁面  -->
-                    <!--  設置頁面  -->
-                    <ScrollViewer
-    x:Name="SettingsScrollViewer"
-    Margin="0,8,0,0"
-    Visibility="Collapsed"
-    HorizontalScrollBarVisibility="Disabled"
-    VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="20">
-
-                            <!-- 數據庫管理標題 -->
+            <!--  側邊欄  -->
+            <Grid Grid.Column="0" Background="#FF2D3E50">
+                <StackPanel>
+                    <StackPanel Margin="8,32,0,16" Orientation="Horizontal">
+                        <Ellipse
+                            Width="40"
+                            Height="40"
+                            Fill="LightBlue" />
+                        <StackPanel Margin="8,0,0,0" Visibility="{Binding ElementName=SidebarColumn, Path=Width.Value, Converter={StaticResource SidebarWidthToVisibilityConverter}}">
                             <TextBlock
-            FontSize="20"
-            FontWeight="Bold"
-            Foreground="White"
-            Margin="0,0,0,20"
-            Text="數據庫管理" />
+                                x:Name="TextUser"
+                                FontWeight="Bold"
+                                Foreground="White"
+                                Text="Jacob Hsu" />
+                            <TextBlock
+                                x:Name="TextID"
+                                FontSize="12"
+                                Foreground="White"
+                                Text="+1 702 551 6183" />
+                        </StackPanel>
+                    </StackPanel>
+                    <ListView
+                        x:Name="SidebarListView"
+                        Margin="0,8,0,0"
+                        SelectionChanged="SidebarListView_SelectionChanged"
+                        Visibility="{Binding ElementName=SidebarColumn, Path=Width.Value, Converter={StaticResource SidebarWidthToVisibilityConverter}}">
+                        <ListViewItem x:Name="ChatsItem" Content="Chats" Foreground="White" Tag="Chats" />
+                        <ListViewItem x:Name="ContactsItem" Content="Contacts" Foreground="White" Tag="Contacts" />
+                        <ListViewItem x:Name="GroupsItem" Content="Groups" Foreground="White" Tag="Groups" />
+                        <ListViewItem x:Name="SettingsItem" Content="Settings" Foreground="White" Tag="Settings" />
+                        <ListViewItem x:Name="LogOutItem" Content="Log Out" Foreground="DarkRed" Tag="LogOut" />
+                    </ListView>
+                </StackPanel>
+            </Grid>
 
-                            <!-- 數據庫統計信息卡片 -->
-                            <Border
-            Background="#FF2D3E50"
-            CornerRadius="8"
-            Margin="0,0,0,20"
-            Padding="20">
-                                <StackPanel>
-                                    <TextBlock
-                    FontSize="16"
-                    FontWeight="Bold"
-                    Foreground="White"
-                    Margin="0,0,0,15"
-                    Text="數據庫統計信息" />
+            <!-- 主內容區域 -->
+            <Grid
+                x:Name="MainContentGrid"
+                Grid.Column="1"
+                Background="#FF23272A">
 
-                                    <Grid>
+                <Rectangle
+                    x:Name="OverlayRect"
+                    Canvas.ZIndex="99"
+                    Fill="Transparent"
+                    PointerPressed="OverlayRect_PointerPressed"
+                    Visibility="Collapsed" />
+
+                <!-- 頂部搜索欄和其他頁面保持不變 -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 搜索欄 -->
+                    <StackPanel
+                        Grid.Row="0"
+                        Padding="12,8"
+                        Background="#FF23272A"
+                        Orientation="Horizontal">
+                        <Button
+                            Width="40"
+                            Height="40"
+                            Background="Transparent"
+                            Click="HamburgerButton_Click">
+                            <FontIcon
+                                FontFamily="Segoe MDL2 Assets"
+                                FontSize="20"
+                                Foreground="White"
+                                Glyph="&#xE700;" />
+                        </Button>
+                        <TextBox
+                            x:Name="SearchTextBox"
+                            Width="300"
+                            Height="40"
+                            Margin="12,0,0,0"
+                            Padding="0,4,0,0"
+                            VerticalContentAlignment="Center"
+                            PlaceholderText="Search (Chats)"
+                            TextChanged="SearchTextBox_TextChanged" />
+                    </StackPanel>
+
+                    <!--  多頁面內容區域  -->
+                    <Grid Grid.Row="1">
+                        <!--  聊天列表頁面  -->
+                        <ListView
+                            x:Name="ChatListView"
+                            Margin="0,8,0,0"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            ScrollViewer.HorizontalScrollMode="Disabled"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            ScrollViewer.VerticalScrollMode="Enabled"
+                            Visibility="Visible">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Height="72" Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="64" />
                                             <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
 
-                                        <!-- 左列 -->
-                                        <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                <TextBlock
-                                Text="聊天消息: "
-                                Foreground="LightGray"
-                                FontSize="14" />
-                                                <TextBlock
-                                x:Name="TotalMessagesText"
-                                Text="0"
-                                Foreground="White"
-                                FontSize="14"
-                                FontWeight="Bold" />
-                                            </StackPanel>
+                                        <!--  頭像  -->
+                                        <Ellipse
+                                            Width="48"
+                                            Height="48"
+                                            Margin="8"
+                                            VerticalAlignment="Center"
+                                            Fill="{Binding AvatarColor}" />
 
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                <TextBlock
-                                Text="群組: "
-                                Foreground="LightGray"
-                                FontSize="14" />
-                                                <TextBlock
-                                x:Name="TotalGroupsText"
-                                Text="0"
-                                Foreground="White"
-                                FontSize="14"
-                                FontWeight="Bold" />
-                                            </StackPanel>
+                                        <!--  中間內容區  -->
+                                        <Grid
+                                            Grid.Column="1"
+                                            Margin="0,8,8,8"
+                                            VerticalAlignment="Top">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
 
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                <TextBlock
-                                Text="好友: "
-                                Foreground="LightGray"
-                                FontSize="14" />
-                                                <TextBlock
-                                x:Name="TotalFriendsText"
-                                Text="0"
-                                Foreground="White"
-                                FontSize="14"
-                                FontWeight="Bold" />
-                                            </StackPanel>
+                                            <TextBlock
+                                                Grid.Row="0"
+                                                Height="20"
+                                                VerticalAlignment="Center"
+                                                FontWeight="Bold"
+                                                Foreground="White"
+                                                Text="{Binding Name}"
+                                                TextTrimming="CharacterEllipsis" />
 
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                <TextBlock
-                                Text="群組成員: "
-                                Foreground="LightGray"
-                                FontSize="14" />
-                                                <TextBlock
-                                x:Name="TotalGroupMembersText"
-                                Text="0"
-                                Foreground="White"
-                                FontSize="14"
-                                FontWeight="Bold" />
-                                            </StackPanel>
-                                        </StackPanel>
-
-                                        <!-- 右列 -->
-                                        <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                <TextBlock
-                                Text="聊天列表項: "
-                                Foreground="LightGray"
-                                FontSize="14" />
-                                                <TextBlock
-                                x:Name="TotalChatListItemsText"
-                                Text="0"
-                                Foreground="White"
-                                FontSize="14"
-                                FontWeight="Bold" />
-                                            </StackPanel>
-
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                <TextBlock
-                                Text="好友分類: "
-                                Foreground="LightGray"
-                                FontSize="14" />
-                                                <TextBlock
-                                x:Name="TotalCategoriesText"
-                                Text="0"
-                                Foreground="White"
-                                FontSize="14"
-                                FontWeight="Bold" />
-                                            </StackPanel>
-
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                <TextBlock
-                                Text="設定項: "
-                                Foreground="LightGray"
-                                FontSize="14" />
-                                                <TextBlock
-                                x:Name="TotalSettingsText"
-                                Text="0"
-                                Foreground="White"
-                                FontSize="14"
-                                FontWeight="Bold" />
-                                            </StackPanel>
-
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                <TextBlock
-                                Text="數據庫大小: "
-                                Foreground="LightGray"
-                                FontSize="14" />
-                                                <TextBlock
-                                x:Name="DatabaseSizeText"
-                                Text="0 B"
-                                Foreground="White"
-                                FontSize="14"
-                                FontWeight="Bold" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <!-- 刷新按鈕 -->
-                                    <Button
-                    x:Name="RefreshStatsButton"
-                    Content="刷新統計信息"
-                    Background="#FF007ACC"
-                    Foreground="White"
-                    HorizontalAlignment="Center"
-                    Margin="0,15,0,0"
-                    Click="RefreshStatsButton_Click" />
-                                </StackPanel>
-                            </Border>
-
-                            <!-- 危險操作卡片 -->
-                            <Border
-            Background="#FF8B0000"
-            CornerRadius="8"
-            Margin="0,0,0,20"
-            Padding="20">
-                                <StackPanel>
-                                    <TextBlock
-                    FontSize="16"
-                    FontWeight="Bold"
-                    Foreground="White"
-                    Margin="0,0,0,10"
-                    Text="危險操作" />
-
-                                    <TextBlock
-                    FontSize="14"
-                    Foreground="#FFFFE4E1"
-                    Margin="0,0,0,15"
-                    TextWrapping="Wrap"
-                    Text="⚠️ 以下操作將永久刪除數據，請謹慎操作！" />
-
-                                    <Button
-                    x:Name="DeleteAllChatDataButton"
-                    Content="刪除所有聊天資料"
-                    Background="#FFDC143C"
-                    Foreground="White"
-                    HorizontalAlignment="Center"
-                    FontWeight="Bold"
-                    Click="DeleteAllChatDataButton_Click" />
-                                </StackPanel>
-                            </Border>
-
-                            <!-- 最近消息預覽卡片 -->
-                            <Border
-            Background="#FF2D3E50"
-            CornerRadius="8"
-            Margin="0,0,0,20"
-            Padding="20">
-                                <StackPanel>
-                                    <TextBlock
-                    FontSize="16"
-                    FontWeight="Bold"
-                    Foreground="White"
-                    Margin="0,0,0,15"
-                    Text="最近消息預覽" />
-
-                                    <ScrollViewer 
-                    x:Name="RecentMessagesScrollViewer"
-                    MaxHeight="200"
-                    HorizontalScrollBarVisibility="Disabled"
-                    VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl x:Name="RecentMessagesItemsControl">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border
-                                    Background="#FF3C4147"
-                                    CornerRadius="4"
-                                    Margin="0,0,0,4"
-                                    Padding="10">
-                                                        <StackPanel>
-                                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                                                <TextBlock
-                                                Text="{Binding SenderName}"
-                                                Foreground="#FF7E6CA8"
+                                            <TextBlock
+                                                Grid.Row="1"
+                                                MaxHeight="36"
+                                                Margin="0,2,0,0"
+                                                VerticalAlignment="Top"
                                                 FontSize="12"
-                                                FontWeight="Bold" />
-                                                                <TextBlock
-                                                Text="{Binding TimeString}"
-                                                Foreground="Gray"
-                                                FontSize="11"
-                                                Margin="10,0,0,0" />
-                                                            </StackPanel>
-                                                            <TextBlock
-                                            Text="{Binding Content}"
-                                            Foreground="White"
-                                            FontSize="13"
-                                            TextWrapping="Wrap"
-                                            MaxLines="2"
-                                            TextTrimming="CharacterEllipsis" />
-                                                        </StackPanel>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
+                                                Foreground="LightGray"
+                                                LineHeight="18"
+                                                MaxLines="2"
+                                                Text="{Binding DisplayLastMessage}"
+                                                TextTrimming="CharacterEllipsis"
+                                                TextWrapping="Wrap" />
+                                        </Grid>
 
-                                    <Button
-                    x:Name="RefreshRecentMessagesButton"
-                    Content="刷新最近消息"
-                    Background="#FF007ACC"
-                    Foreground="White"
-                    HorizontalAlignment="Center"
-                    Margin="0,15,0,0"
-                    Click="RefreshRecentMessagesButton_Click" />
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </ScrollViewer>
+                                        <!--  右側內容區  -->
+                                        <Grid
+                                            Grid.Column="2"
+                                            Width="80"
+                                            Margin="0,8,12,8"
+                                            VerticalAlignment="Top">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
 
-                    <!-- 更新聊天界面使用新的消息模板 -->
-                    <Grid
-                x:Name="ChatInterfaceGrid"
-                Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
+                                            <TextBlock
+                                                Grid.Row="0"
+                                                Margin="0,0,0,4"
+                                                HorizontalAlignment="Right"
+                                                FontSize="12"
+                                                Foreground="LightGray"
+                                                Text="{Binding LastTime}" />
 
-                        <!-- 聊天標題欄保持不變 -->
-                        <Grid
-                    Grid.Row="0"
-                    Height="60"
-                    Background="#FF2D3E50"
-                    Padding="16,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                                            <Border
+                                                Grid.Row="1"
+                                                MinWidth="20"
+                                                MinHeight="20"
+                                                HorizontalAlignment="Right"
+                                                Background="#FF7E6CA8"
+                                                CornerRadius="10"
+                                                Visibility="{Binding UnreadCount, Converter={StaticResource UnreadCountToVisibilityConverter}}">
+                                                <TextBlock
+                                                    Margin="6,2"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    FontWeight="Bold"
+                                                    Foreground="White"
+                                                    Text="{Binding UnreadCount}" />
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
 
-                            <!-- 返回按鈕 -->
-                            <Button
-                        x:Name="BackButton"
-                        Grid.Column="0"
-                        Width="40"
-                        Height="40"
-                        Background="Transparent"
-                        Click="BackButton_Click">
-                                <FontIcon
-                            FontFamily="Segoe MDL2 Assets"
-                            FontSize="16"
-                            Foreground="White"
-                            Glyph="&#xE72B;" />
-                            </Button>
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                        </ListView>
 
-                            <!-- 聊天信息 -->
-                            <StackPanel
-                        Grid.Column="1"
-                        Margin="12,0,0,0"
-                        VerticalAlignment="Center">
-                                <TextBlock
-                            x:Name="ChatTitleText"
-                            FontSize="16"
-                            FontWeight="Bold"
-                            Foreground="White"
-                            TextTrimming="CharacterEllipsis" />
-                                <TextBlock
-                            x:Name="ChatSubtitleText"
-                            FontSize="12"
-                            Foreground="LightGray"
-                            TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-
-                            <!-- 更多選項 -->
-                            <Button
-                        Grid.Column="2"
-                        Width="40"
-                        Height="40"
-                        Background="Transparent">
-                                <FontIcon
-                            FontFamily="Segoe MDL2 Assets"
-                            FontSize="16"
-                            Foreground="White"
-                            Glyph="&#xE712;" />
-                            </Button>
-                        </Grid>
-
-                        <!-- 更新的消息列表 -->
+                        <!--  好友列表頁面  -->
                         <ScrollViewer
-                    x:Name="MessageScrollViewer"
-                    Grid.Row="1"
-                    Padding="16,8"
-                    HorizontalScrollBarVisibility="Disabled"
-                    VerticalScrollBarVisibility="Auto"
-                    ZoomMode="Disabled">
-                            <ItemsControl
-                        x:Name="MessagesItemsControl"
-                        HorizontalContentAlignment="Stretch"
-                        ItemTemplateSelector="{StaticResource MessageTemplateSelector}">
-                                <!-- 現在使用消息模板選擇器 -->
-                            </ItemsControl>
+                            x:Name="ContactsScrollViewer"
+                            Margin="0,8,0,0"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto"
+                            Visibility="Collapsed">
+                            <StackPanel x:Name="ContactsStackPanel">
+                                <!-- 好友分類將在代碼中動態添加 -->
+                            </StackPanel>
                         </ScrollViewer>
 
-                        <!-- 消息輸入區保持不變 -->
+                        <!--  群組列表頁面  -->
+                        <ListView
+                            x:Name="GroupListView"
+                            Margin="0,8,0,0"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            ScrollViewer.HorizontalScrollMode="Disabled"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            ScrollViewer.VerticalScrollMode="Enabled"
+                            Visibility="Collapsed">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Height="72" Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!--  群組頭像  -->
+                                        <Border
+                                            Width="48"
+                                            Height="48"
+                                            Margin="8"
+                                            VerticalAlignment="Center"
+                                            Background="#FF50C878"
+                                            CornerRadius="8">
+                                            <FontIcon
+                                                FontFamily="Segoe MDL2 Assets"
+                                                FontSize="24"
+                                                Foreground="White"
+                                                Glyph="&#xE125;" />
+                                        </Border>
+
+                                        <!--  群組信息  -->
+                                        <Grid
+                                            Grid.Column="1"
+                                            Margin="0,8,8,8"
+                                            VerticalAlignment="Top">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock
+                                                Grid.Row="0"
+                                                Height="20"
+                                                VerticalAlignment="Center"
+                                                FontWeight="Bold"
+                                                Foreground="White"
+                                                Text="{Binding GroupName}"
+                                                TextTrimming="CharacterEllipsis" />
+
+                                            <TextBlock
+                                                Grid.Row="1"
+                                                MaxHeight="36"
+                                                Margin="0,2,0,0"
+                                                VerticalAlignment="Top"
+                                                FontSize="12"
+                                                Foreground="LightGray"
+                                                LineHeight="18"
+                                                MaxLines="2"
+                                                TextTrimming="CharacterEllipsis"
+                                                TextWrapping="Wrap">
+                                                <Run Text="{Binding MemberCount}" />
+                                                <Run Text="/" />
+                                                <Run Text="{Binding MaxMemberCount}" />
+                                                <Run Text=" 成員" />
+                                            </TextBlock>
+                                        </Grid>
+
+                                        <!--  群組狀態  -->
+                                        <Grid
+                                            Grid.Column="2"
+                                            Width="80"
+                                            Margin="0,8,12,8"
+                                            VerticalAlignment="Center">
+                                            <Border
+                                                MinWidth="60"
+                                                MinHeight="20"
+                                                HorizontalAlignment="Right"
+                                                Background="#FF3498DB"
+                                                CornerRadius="10"
+                                                Visibility="{Binding GroupAllShut, Converter={StaticResource UnreadCountToVisibilityConverter}}">
+                                                <TextBlock
+                                                    Margin="8,2"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    FontSize="10"
+                                                    FontWeight="Bold"
+                                                    Foreground="White"
+                                                    Text="全員禁言" />
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                        </ListView>
+
+                        <!--  設置頁面  -->
+                        <ScrollViewer
+                            x:Name="SettingsScrollViewer"
+                            Margin="0,8,0,0"
+                            Visibility="Collapsed"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                            <StackPanel Margin="20">
+
+                                <!-- 數據庫管理標題 -->
+                                <TextBlock
+                                    FontSize="20"
+                                    FontWeight="Bold"
+                                    Foreground="White"
+                                    Margin="0,0,0,20"
+                                    Text="數據庫管理" />
+
+                                <!-- 數據庫統計信息卡片 -->
+                                <Border
+                                    Background="#FF2D3E50"
+                                    CornerRadius="8"
+                                    Margin="0,0,0,20"
+                                    Padding="20">
+                                    <StackPanel>
+                                        <TextBlock
+                                            FontSize="16"
+                                            FontWeight="Bold"
+                                            Foreground="White"
+                                            Margin="0,0,0,15"
+                                            Text="數據庫統計信息" />
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- 左列 -->
+                                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="聊天消息: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="TotalMessagesText"
+                                                        Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="群組: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="TotalGroupsText"
+                                                        Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="好友: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="TotalFriendsText"
+                                                        Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="群組成員: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="TotalGroupMembersText"
+                                                        Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <!-- 右列 -->
+                                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="聊天列表項: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="TotalChatListItemsText"
+                                                        Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="好友分類: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="TotalCategoriesText"
+                                                        Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="設定項: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="TotalSettingsText"
+                                                        Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="數據庫大小: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="DatabaseSizeText"
+                                                        Text="0 B"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <!-- 刷新按鈕 -->
+                                        <Button
+                                            x:Name="RefreshStatsButton"
+                                            Content="刷新統計信息"
+                                            Background="#FF007ACC"
+                                            Foreground="White"
+                                            HorizontalAlignment="Center"
+                                            Margin="0,15,0,0"
+                                            Click="RefreshStatsButton_Click" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 危險操作卡片 -->
+                                <Border
+                                    Background="#FF8B0000"
+                                    CornerRadius="8"
+                                    Margin="0,0,0,20"
+                                    Padding="20">
+                                    <StackPanel>
+                                        <TextBlock
+                                            FontSize="16"
+                                            FontWeight="Bold"
+                                            Foreground="White"
+                                            Margin="0,0,0,10"
+                                            Text="危險操作" />
+
+                                        <TextBlock
+                                            FontSize="14"
+                                            Foreground="#FFFFE4E1"
+                                            Margin="0,0,0,15"
+                                            TextWrapping="Wrap"
+                                            Text="⚠️ 以下操作將永久刪除數據，請謹慎操作！" />
+
+                                        <Button
+                                            x:Name="DeleteAllChatDataButton"
+                                            Content="刪除所有聊天資料"
+                                            Background="#FFDC143C"
+                                            Foreground="White"
+                                            HorizontalAlignment="Center"
+                                            FontWeight="Bold"
+                                            Click="DeleteAllChatDataButton_Click" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 最近消息預覽卡片 -->
+                                <Border
+                                    Background="#FF2D3E50"
+                                    CornerRadius="8"
+                                    Margin="0,0,0,20"
+                                    Padding="20">
+                                    <StackPanel>
+                                        <TextBlock
+                                            FontSize="16"
+                                            FontWeight="Bold"
+                                            Foreground="White"
+                                            Margin="0,0,0,15"
+                                            Text="最近消息預覽" />
+
+                                        <ScrollViewer 
+                                            x:Name="RecentMessagesScrollViewer"
+                                            MaxHeight="200"
+                                            HorizontalScrollBarVisibility="Disabled"
+                                            VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl x:Name="RecentMessagesItemsControl">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border
+                                                            Background="#FF3C4147"
+                                                            CornerRadius="4"
+                                                            Margin="0,0,0,4"
+                                                            Padding="10">
+                                                            <StackPanel>
+                                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                                    <TextBlock
+                                                                        Text="{Binding SenderName}"
+                                                                        Foreground="#FF7E6CA8"
+                                                                        FontSize="12"
+                                                                        FontWeight="Bold" />
+                                                                    <TextBlock
+                                                                        Text="{Binding TimeString}"
+                                                                        Foreground="Gray"
+                                                                        FontSize="11"
+                                                                        Margin="10,0,0,0" />
+                                                                </StackPanel>
+                                                                <TextBlock
+                                                                    Text="{Binding Content}"
+                                                                    Foreground="White"
+                                                                    FontSize="13"
+                                                                    TextWrapping="Wrap"
+                                                                    MaxLines="2"
+                                                                    TextTrimming="CharacterEllipsis" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+
+                                        <Button
+                                            x:Name="RefreshRecentMessagesButton"
+                                            Content="刷新最近消息"
+                                            Background="#FF007ACC"
+                                            Foreground="White"
+                                            HorizontalAlignment="Center"
+                                            Margin="0,15,0,0"
+                                            Click="RefreshRecentMessagesButton_Click" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- 更新聊天界面使用新的消息模板 -->
                         <Grid
-                    Grid.Row="2"
-                    Height="60"
-                    Background="#FF2D3E50"
-                    Padding="16,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                            x:Name="ChatInterfaceGrid"
+                            Visibility="Collapsed">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                            <TextBox
-                        x:Name="MessageInputTextBox"
-                        Grid.Column="0"
-                        Height="40"
-                        VerticalContentAlignment="Center"
-                        Background="#FF23272A"
-                        BorderBrush="#FF3C4147"
-                        Foreground="White"
-                        KeyDown="MessageInputTextBox_KeyDown"
-                        PlaceholderText="輸入消息..." />
+                            <!-- 聊天標題欄保持不變 -->
+                            <Grid
+                                Grid.Row="0"
+                                Height="60"
+                                Background="#FF2D3E50"
+                                Padding="16,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
 
-                            <Button
-                        x:Name="SendButton"
-                        Grid.Column="1"
-                        Width="40"
-                        Height="40"
-                        Margin="8,0,0,0"
-                        Background="#FF007ACC"
-                        Click="SendButton_Click">
-                                <FontIcon
-                            FontFamily="Segoe MDL2 Assets"
-                            FontSize="16"
-                            Foreground="White"
-                            Glyph="&#xE122;" />
-                            </Button>
+                                <!-- 返回按鈕 -->
+                                <Button
+                                    x:Name="BackButton"
+                                    Grid.Column="0"
+                                    Width="40"
+                                    Height="40"
+                                    Background="Transparent"
+                                    Click="BackButton_Click">
+                                    <FontIcon
+                                        FontFamily="Segoe MDL2 Assets"
+                                        FontSize="16"
+                                        Foreground="White"
+                                        Glyph="&#xE72B;" />
+                                </Button>
+
+                                <!-- 聊天信息 -->
+                                <StackPanel
+                                    Grid.Column="1"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Center">
+                                    <TextBlock
+                                        x:Name="ChatTitleText"
+                                        FontSize="16"
+                                        FontWeight="Bold"
+                                        Foreground="White"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        x:Name="ChatSubtitleText"
+                                        FontSize="12"
+                                        Foreground="LightGray"
+                                        TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+
+                                <!-- 更多選項 -->
+                                <Button
+                                    Grid.Column="2"
+                                    Width="40"
+                                    Height="40"
+                                    Background="Transparent">
+                                    <FontIcon
+                                        FontFamily="Segoe MDL2 Assets"
+                                        FontSize="16"
+                                        Foreground="White"
+                                        Glyph="&#xE712;" />
+                                </Button>
+                            </Grid>
+
+                            <!-- 更新的消息列表 -->
+                            <ScrollViewer
+                                x:Name="MessageScrollViewer"
+                                Grid.Row="1"
+                                Padding="16,8"
+                                HorizontalScrollBarVisibility="Disabled"
+                                VerticalScrollBarVisibility="Auto"
+                                ZoomMode="Disabled">
+                                <ItemsControl
+                                    x:Name="MessagesItemsControl"
+                                    HorizontalContentAlignment="Stretch"
+                                    ItemTemplateSelector="{StaticResource MessageTemplateSelector}">
+                                    <!-- 現在使用消息模板選擇器 -->
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- 消息輸入區保持不變 -->
+                            <Grid
+                                Grid.Row="2"
+                                Height="60"
+                                Background="#FF2D3E50"
+                                Padding="16,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox
+                                    x:Name="MessageInputTextBox"
+                                    Grid.Column="0"
+                                    Height="40"
+                                    VerticalContentAlignment="Center"
+                                    Background="#FF23272A"
+                                    BorderBrush="#FF3C4147"
+                                    Foreground="White"
+                                    KeyDown="MessageInputTextBox_KeyDown"
+                                    PlaceholderText="輸入消息..." />
+
+                                <Button
+                                    x:Name="SendButton"
+                                    Grid.Column="1"
+                                    Width="40"
+                                    Height="40"
+                                    Margin="8,0,0,0"
+                                    Background="#FF007ACC"
+                                    Click="SendButton_Click">
+                                    <FontIcon
+                                        FontFamily="Segoe MDL2 Assets"
+                                        FontSize="16"
+                                        Foreground="White"
+                                        Glyph="&#xE122;" />
+                                </Button>
+                            </Grid>
                         </Grid>
                     </Grid>
                 </Grid>
             </Grid>
+
+            <!-- 登出遮罩保持不變 -->
+            <Grid
+                x:Name="LogoutMask"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Background="#80000000"
+                Canvas.ZIndex="999"
+                Visibility="Collapsed">
+                <ProgressRing
+                    x:Name="LogoutProgressRing"
+                    Width="80"
+                    Height="80"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="#7e6ca8"
+                    IsActive="True" />
+            </Grid>
         </Grid>
 
-        <!-- 登出遮罩保持不變 -->
-        <Grid
-    x:Name="LogoutMask"
-    HorizontalAlignment="Stretch"
-    VerticalAlignment="Stretch"
-    Background="#80000000"
-    Canvas.ZIndex="999"
-    Visibility="Collapsed">
-            <ProgressRing
-        x:Name="LogoutProgressRing"
-        Width="80"
-        Height="80"
-        HorizontalAlignment="Center"
-        VerticalAlignment="Center"
-        Foreground="#7e6ca8"
-        IsActive="True" />
-        </Grid>
-
-        <!-- 视频播放器覆盖层 - 放在 Grid 的最后确保在最顶层 -->
+        <!-- 視頻播放器覆蓋層 - 放在根容器外層，確保覆蓋整個頁面 -->
         <Grid x:Name="VideoPlayerOverlayContainer"
+              Canvas.ZIndex="1000"
               HorizontalAlignment="Stretch"
               VerticalAlignment="Stretch"
               Background="Transparent"
@@ -914,6 +921,19 @@
                                       HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch"
                                       CloseRequested="VideoPlayerOverlay_CloseRequested"/>
+        </Grid>
+        <!-- 在視頻播放器容器下方添加圖片查看器容器 -->
+        <!-- 圖片查看器覆蓋層 - 確保在最頂層 -->
+        <Grid x:Name="ImageViewerOverlayContainer"
+              Canvas.ZIndex="1001"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Stretch"
+              Background="Transparent"
+              Visibility="Collapsed">
+            <controls:ImageViewerControl x:Name="ImageViewerOverlay" 
+                                         HorizontalAlignment="Stretch"
+                                         VerticalAlignment="Stretch"
+                                         CloseRequested="ImageViewerOverlay_CloseRequested"/>
         </Grid>
     </Grid>
 </Page>

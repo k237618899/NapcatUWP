@@ -1,0 +1,124 @@
+﻿<UserControl
+    x:Class="NapcatUWP.Controls.ImageViewerControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch">
+
+    <!-- 全屏背景覆蓋層 -->
+    <Grid x:Name="OverlayGrid" 
+          Background="#DD000000" 
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch"
+          Tapped="OverlayGrid_Tapped">
+
+        <!-- 圖片容器 -->
+        <ScrollViewer x:Name="ImageScrollViewer"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollMode="Enabled"
+                      VerticalScrollMode="Enabled"
+                      ZoomMode="Enabled"
+                      MinZoomFactor="0.5"
+                      MaxZoomFactor="5.0"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch"
+                      Tapped="ImageScrollViewer_Tapped">
+
+            <Image x:Name="DisplayImage" 
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Stretch="Uniform"/>
+        </ScrollViewer>
+
+        <!-- 關閉按鈕 -->
+        <Border Background="#80000000" 
+                Width="50" 
+                Height="50" 
+                HorizontalAlignment="Right" 
+                VerticalAlignment="Top"
+                Margin="20"
+                CornerRadius="25">
+            <Button x:Name="CloseButton" 
+                    Content="✕" 
+                    Background="Transparent" 
+                    Foreground="White" 
+                    FontSize="20" 
+                    Width="50" 
+                    Height="50" 
+                    Click="CloseButton_Click"
+                    BorderThickness="0"/>
+        </Border>
+
+        <!-- 縮放控制按鈕 -->
+        <Border Background="#80000000"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,30"
+                Padding="10"
+                CornerRadius="20">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="ZoomOutButton"
+                        Content="➖"
+                        Background="Transparent"
+                        Foreground="White"
+                        FontSize="16"
+                        Width="40"
+                        Height="40"
+                        Margin="5,0"
+                        Click="ZoomOutButton_Click"
+                        BorderThickness="0"/>
+
+                <TextBlock x:Name="ZoomFactorText"
+                           Text="100%"
+                           Foreground="White"
+                           FontSize="14"
+                           VerticalAlignment="Center"
+                           Margin="10,0"/>
+
+                <Button x:Name="ZoomInButton"
+                        Content="➕"
+                        Background="Transparent"
+                        Foreground="White"
+                        FontSize="16"
+                        Width="40"
+                        Height="40"
+                        Margin="5,0"
+                        Click="ZoomInButton_Click"
+                        BorderThickness="0"/>
+
+                <Button x:Name="ResetZoomButton"
+                        Content="🔍"
+                        Background="Transparent"
+                        Foreground="White"
+                        FontSize="16"
+                        Width="40"
+                        Height="40"
+                        Margin="5,0"
+                        Click="ResetZoomButton_Click"
+                        BorderThickness="0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 加載指示器 -->
+        <ProgressRing x:Name="LoadingRing" 
+                      IsActive="True" 
+                      Foreground="White" 
+                      Width="50" 
+                      Height="50" 
+                      HorizontalAlignment="Center" 
+                      VerticalAlignment="Center"/>
+
+        <!-- 錯誤信息 -->
+        <TextBlock x:Name="ErrorTextBlock" 
+                   Text="圖片加載失敗" 
+                   Foreground="Red" 
+                   FontSize="16" 
+                   HorizontalAlignment="Center" 
+                   VerticalAlignment="Center"
+                   Visibility="Collapsed"/>
+    </Grid>
+</UserControl>

@@ -62,7 +62,7 @@ namespace NapcatUWP.Controls.APIHandler
         }
 
         /// <summary>
-        ///     請求最近聯繫人消息 - 使用 Newtonsoft.Json
+        ///     請求最近聯繫人消息 - 使用 Newtonsoft.Json，修改為100條
         /// </summary>
         private async void RequestRecentContacts()
         {
@@ -73,7 +73,7 @@ namespace NapcatUWP.Controls.APIHandler
                     action = "get_recent_contact",
                     @params = new
                     {
-                        count = 20
+                        count = 50 // 修改為100條
                     },
                     echo = "get_recent_contact"
                 };
@@ -81,7 +81,7 @@ namespace NapcatUWP.Controls.APIHandler
                 var jsonString = JsonConvert.SerializeObject(requestData);
                 await MainPage.SocketClientStarter._socket.Send(jsonString);
 
-                Debug.WriteLine("OneBotAPIHandler: 已發送最近聯繫人請求");
+                Debug.WriteLine("OneBotAPIHandler: 已發送最近聯繫人請求（100條）");
                 Debug.WriteLine($"請求 JSON: {jsonString}");
             }
             catch (Exception ex)
@@ -413,7 +413,7 @@ namespace NapcatUWP.Controls.APIHandler
         }
 
         /// <summary>
-        ///     解析歷史消息 - 修正時間戳處理
+        ///     解析歷史消息 - 修正時間戳處理（改進版）
         /// </summary>
         private ChatMessage ParseHistoryMessage(JToken messageToken, bool isGroup, long chatId = 0)
         {
@@ -421,10 +421,23 @@ namespace NapcatUWP.Controls.APIHandler
             {
                 var messageId = messageToken.Value<long>("message_id");
                 var unixTimestamp = messageToken.Value<long>("time");
-                var originalTimestamp = DateTimeOffset.FromUnixTimeSeconds(unixTimestamp).DateTime;
 
-                // 使用修正後的時間戳處理
-                var timestamp = DataAccess.ProcessTimestamp(originalTimestamp);
+                // 正確處理Unix時間戳轉換
+                DateTime timestamp;
+                try
+                {
+                    // 將Unix時間戳轉換為UTC時間，然後轉為本地時間
+                    var utcTime = DateTimeOffset.FromUnixTimeSeconds(unixTimestamp).UtcDateTime;
+                    timestamp = utcTime.ToLocalTime();
+
+                    Debug.WriteLine(
+                        $"歷史消息時間戳處理: Unix={unixTimestamp}, UTC={utcTime:yyyy-MM-dd HH:mm:ss}, Local={timestamp:yyyy-MM-dd HH:mm:ss}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"時間戳轉換失敗: {ex.Message}，使用當前時間");
+                    timestamp = DateTime.Now;
+                }
 
                 var senderId = messageToken.Value<long>("user_id");
                 var messageType = messageToken.Value<string>("message_type") ?? (isGroup ? "group" : "private");
@@ -491,7 +504,7 @@ namespace NapcatUWP.Controls.APIHandler
                 var chatMessage = new ChatMessage
                 {
                     Content = plainText,
-                    Timestamp = timestamp,
+                    Timestamp = timestamp, // 使用正確處理的時間戳
                     IsFromMe = isFromMe,
                     SenderName = senderName,
                     SenderId = senderId,
@@ -500,7 +513,7 @@ namespace NapcatUWP.Controls.APIHandler
                 };
 
                 Debug.WriteLine(
-                    $"解析歷史消息: ID={messageId}, Sender={senderName}, Content={plainText.Substring(0, Math.Min(50, plainText.Length))}...");
+                    $"解析歷史消息: ID={messageId}, Time={timestamp:HH:mm}, Sender={senderName}, Content={plainText.Substring(0, Math.Min(50, plainText.Length))}...");
                 return chatMessage;
             }
             catch (Exception ex)
@@ -510,6 +523,7 @@ namespace NapcatUWP.Controls.APIHandler
                 return null;
             }
         }
+
 
         /// <summary>
         ///     獲取當前用戶ID
@@ -593,7 +607,7 @@ namespace NapcatUWP.Controls.APIHandler
         }
 
         /// <summary>
-        ///     處理 get_msg 響應
+        ///     處理 get_msg 響應 - 修正時間戳處理
         /// </summary>
         private void HandleGetMessageResponse(ResponseEntity response, string echo)
         {
@@ -613,8 +627,21 @@ namespace NapcatUWP.Controls.APIHandler
                     if (long.TryParse(messageIdStr, out var messageId))
                         try
                         {
-                            var timestamp = DateTimeOffset.FromUnixTimeSeconds(response.Data.Value<long>("time"))
-                                .DateTime;
+                            // 正確處理時間戳
+                            var unixTimestamp = response.Data.Value<long>("time");
+                            DateTime timestamp;
+                            try
+                            {
+                                var utcTime = DateTimeOffset.FromUnixTimeSeconds(unixTimestamp).UtcDateTime;
+                                timestamp = utcTime.ToLocalTime();
+                                Debug.WriteLine(
+                                    $"get_msg時間戳處理: Unix={unixTimestamp}, Local={timestamp:yyyy-MM-dd HH:mm:ss}");
+                            }
+                            catch
+                            {
+                                timestamp = DateTime.Now;
+                            }
+
                             var senderId = response.Data.Value<long>("user_id");
                             var messageType = response.Data.Value<string>("message_type") ?? "text";
                             var isGroup = messageType == "group";
@@ -1068,7 +1095,7 @@ namespace NapcatUWP.Controls.APIHandler
         }
 
         /// <summary>
-        ///     解析最近聯繫人消息 - 更新版，支持富消息，UWP 15063 兼容
+        ///     解析最近聯繫人消息 - 修復時間戳處理，支持富消息，UWP 15063 兼容
         /// </summary>
         private RecentContactMessage ParseRecentContactMessage(JToken contactToken)
         {
@@ -1082,12 +1109,34 @@ namespace NapcatUWP.Controls.APIHandler
                     return null;
                 }
 
+                // 獲取並處理時間戳
+                var unixTimestamp = latestMsgToken.Value<long>("time");
+                DateTime processedTimestamp;
+
+                try
+                {
+                    // 使用正確的時間戳轉換方式
+                    var utcTime = DateTimeOffset.FromUnixTimeSeconds(unixTimestamp).UtcDateTime;
+                    var localTime = utcTime.ToLocalTime();
+
+                    // 使用 DataAccess 中的 ProcessTimestamp 方法進行進一步處理
+                    processedTimestamp = DataAccess.ProcessTimestamp(localTime);
+
+                    Debug.WriteLine(
+                        $"最近聯繫人時間戳處理: Unix={unixTimestamp}, UTC={utcTime:yyyy-MM-dd HH:mm:ss}, Local={localTime:yyyy-MM-dd HH:mm:ss}, Processed={processedTimestamp:yyyy-MM-dd HH:mm:ss}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"最近聯繫人時間戳轉換失敗: {ex.Message}，使用當前時間");
+                    processedTimestamp = DateTime.Now;
+                }
+
                 var message = new RecentContactMessage
                 {
                     // 基本信息
                     SelfId = latestMsgToken.Value<long>("self_id"),
                     UserId = latestMsgToken.Value<long>("user_id"),
-                    Time = latestMsgToken.Value<long>("time"),
+                    Time = unixTimestamp, // 保持原始Unix時間戳
                     MessageId = latestMsgToken.Value<long>("message_id"),
                     MessageSeq = latestMsgToken.Value<long>("message_seq"),
                     RealId = latestMsgToken.Value<long>("real_id"),
@@ -1107,7 +1156,10 @@ namespace NapcatUWP.Controls.APIHandler
                     SendMemberName = contactToken.Value<string>("sendMemberName") ?? "",
                     PeerName = contactToken.Value<string>("peerName") ?? "",
                     Message = contactToken.Value<string>("message") ?? "",
-                    Wording = contactToken.Value<string>("wording") ?? ""
+                    Wording = contactToken.Value<string>("wording") ?? "",
+
+                    // 添加處理後的時間戳字段
+                    ProcessedTimestamp = processedTimestamp
                 };
 
                 // 解析發送者信息
@@ -1147,7 +1199,7 @@ namespace NapcatUWP.Controls.APIHandler
                 }
 
                 Debug.WriteLine(
-                    $"OneBotAPIHandler: 成功解析最近聯繫人消息 - PeerName: {message.PeerName}, Message: {message.ParsedMessage?.Substring(0, Math.Min(50, message.ParsedMessage?.Length ?? 0))}...");
+                    $"OneBotAPIHandler: 成功解析最近聯繫人消息 - PeerName: {message.PeerName}, Time: {processedTimestamp:HH:mm}, Message: {message.ParsedMessage?.Substring(0, Math.Min(50, message.ParsedMessage?.Length ?? 0))}...");
                 return message;
             }
             catch (Exception ex)

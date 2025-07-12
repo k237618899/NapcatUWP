@@ -10,8 +10,6 @@ using NapcatUWP.Models;
 using NapcatUWP.Tools;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Runtime.CompilerServices;
-
 
 namespace NapcatUWP.Controls
 {
@@ -221,7 +219,8 @@ namespace NapcatUWP.Controls
 
                 var createChatListCacheTableCmd = new SqliteCommand(createChatListCacheTable, db);
                 createChatListCacheTableCmd.ExecuteNonQuery();
-
+                // 在 InitializeDatabase 方法的最後添加
+                FixDatabaseTimestamps();
                 Debug.WriteLine("數據庫初始化完成");
             }
         }
@@ -820,7 +819,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        ///     加載聊天記錄 - 增強版，支持消息段，動態更新發送者名稱，修正時間戳
+        ///     加載聊天記錄 - 修復時區問題
         /// </summary>
         public static List<ChatMessage> GetChatMessages(long chatId, bool isGroup, int limit = 50)
         {
@@ -850,10 +849,22 @@ namespace NapcatUWP.Controls
                         while (query.Read())
                         {
                             var timestampStr = Convert.ToString(query["Timestamp"]);
-                            DateTime.TryParse(timestampStr, out var originalTimestamp);
 
-                            // 修正時間戳
+                            // 解析時間戳
+                            DateTime originalTimestamp;
+                            if (!DateTime.TryParse(timestampStr, out originalTimestamp))
+                            {
+                                Debug.WriteLine($"無法解析時間戳字符串: {timestampStr}");
+                                originalTimestamp = DateTime.Now;
+                            }
+
+                            Debug.WriteLine(
+                                $"GetChatMessages: 從數據庫讀取時間戳: {timestampStr} -> {originalTimestamp:yyyy-MM-dd HH:mm:ss}");
+
+                            // 使用修正後的時間戳處理
                             var timestamp = ProcessTimestamp(originalTimestamp);
+
+                            Debug.WriteLine($"GetChatMessages: 處理後時間戳: {timestamp:yyyy-MM-dd HH:mm:ss}");
 
                             // 嘗試反序列化消息段
                             var segments = new List<MessageSegment>();
@@ -868,10 +879,8 @@ namespace NapcatUWP.Controls
                                         // 使用 MessageSegmentParser 重新解析以獲得正確的類型
                                         var rawSegments = JsonConvert.DeserializeObject<JArray>(segmentsJson);
                                         if (rawSegments != null)
-                                        {
                                             segments = MessageSegmentParser.ParseMessageArray(rawSegments,
                                                 isGroup ? chatId : 0);
-                                        }
                                     }
                                 }
                             }
@@ -933,7 +942,9 @@ namespace NapcatUWP.Controls
                                 var dbSenderName = Convert.ToString(query["SenderName"]) ?? "";
                                 senderName = !string.IsNullOrEmpty(dbSenderName) && !dbSenderName.StartsWith("用戶 ")
                                     ? dbSenderName
-                                    : (isFromMe ? "我" : $"用戶 {senderId}");
+                                    : isFromMe
+                                        ? "我"
+                                        : $"用戶 {senderId}";
                             }
 
                             var chatMessage = new ChatMessage
@@ -943,7 +954,7 @@ namespace NapcatUWP.Controls
                                 SenderId = senderId,
                                 SenderName = senderName,
                                 IsFromMe = isFromMe,
-                                Timestamp = timestamp
+                                Timestamp = timestamp // 使用修正後的時間戳
                             };
 
                             // 最後設置消息段，這將觸發屬性更新
@@ -962,6 +973,97 @@ namespace NapcatUWP.Controls
             }
 
             return messages;
+        }
+
+        /// <summary>
+        ///     修復數據庫中所有消息的時間戳問題 - 針對8小時時差問題
+        /// </summary>
+        public static void FixDatabaseTimestamps()
+        {
+            try
+            {
+                Debug.WriteLine("開始修復數據庫中的時間戳問題");
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    using (var transaction = db.BeginTransaction())
+                    {
+                        try
+                        {
+                            // 查詢所有消息
+                            var selectCommand = new SqliteCommand(@"
+                        SELECT MessageId, Timestamp 
+                        FROM Messages 
+                        ORDER BY Timestamp", db, transaction);
+
+                            var messagesToUpdate =
+                                new List<(long MessageId, DateTime OriginalTime, DateTime CorrectedTime)>();
+
+                            using (var reader = selectCommand.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                {
+                                    var messageId = Convert.ToInt64(reader["MessageId"]);
+                                    var timestampStr = Convert.ToString(reader["Timestamp"]);
+
+                                    if (DateTime.TryParse(timestampStr, out var originalTime))
+                                    {
+                                        var correctedTime = ProcessTimestamp(originalTime);
+
+                                        // 如果時間有變化，加入更新列表
+                                        if (Math.Abs((correctedTime - originalTime).TotalMinutes) > 1)
+                                            messagesToUpdate.Add((messageId, originalTime, correctedTime));
+                                    }
+                                }
+                            }
+
+                            // 批量更新時間戳
+                            if (messagesToUpdate.Count > 0)
+                            {
+                                Debug.WriteLine($"需要更新 {messagesToUpdate.Count} 條消息的時間戳");
+
+                                var updateCommand = new SqliteCommand(@"
+                            UPDATE Messages 
+                            SET Timestamp = @timestamp 
+                            WHERE MessageId = @messageId", db, transaction);
+
+                                foreach (var (messageId, originalTime, correctedTime) in messagesToUpdate)
+                                {
+                                    updateCommand.Parameters.Clear();
+                                    updateCommand.Parameters.AddWithValue("@timestamp",
+                                        correctedTime.ToString("yyyy-MM-dd HH:mm:ss"));
+                                    updateCommand.Parameters.AddWithValue("@messageId", messageId);
+                                    updateCommand.ExecuteNonQuery();
+
+                                    Debug.WriteLine(
+                                        $"更新消息 {messageId}: {originalTime:HH:mm:ss} -> {correctedTime:HH:mm:ss}");
+                                }
+
+                                transaction.Commit();
+                                Debug.WriteLine($"成功修復了 {messagesToUpdate.Count} 條消息的時間戳");
+                            }
+                            else
+                            {
+                                Debug.WriteLine("沒有需要修復的時間戳");
+                                transaction.Commit();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            transaction.Rollback();
+                            Debug.WriteLine($"修復時間戳時發生錯誤，已回滾: {ex.Message}");
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"修復數據庫時間戳時發生錯誤: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -1407,9 +1509,7 @@ namespace NapcatUWP.Controls
             return 0;
         }
 
-        /// <summary>
-        ///     為最近聯繫人創建聊天列表項目
-        /// </summary>
+        // 確保 CreateChatItemsFromRecentMessages 方法正確處理時間戳和持久化
         public static List<ChatItem> CreateChatItemsFromRecentMessages(List<RecentContactMessage> recentMessages)
         {
             var chatItems = new List<ChatItem>();
@@ -1450,8 +1550,18 @@ namespace NapcatUWP.Controls
                             ? recentMsg.RawMessage
                             : recentMsg.Message ?? "";
 
-                    // 轉換時間戳
-                    var timestamp = DateTimeOffset.FromUnixTimeSeconds(recentMsg.Time).DateTime;
+                    // 使用處理後的時間戳
+                    DateTime timestamp;
+                    if (recentMsg.ProcessedTimestamp != DateTime.MinValue)
+                    {
+                        timestamp = recentMsg.ProcessedTimestamp;
+                    }
+                    else
+                    {
+                        var utcTime = DateTimeOffset.FromUnixTimeSeconds(recentMsg.Time).UtcDateTime;
+                        var localTime = utcTime.ToLocalTime();
+                        timestamp = ProcessTimestamp(localTime);
+                    }
 
                     var chatItem = new ChatItem
                     {
@@ -1475,7 +1585,8 @@ namespace NapcatUWP.Controls
                     var recentMsg = recentMessages.FirstOrDefault(m =>
                         (m.ChatType == 2 ? m.GroupId : m.UserId) == c.ChatId &&
                         m.ChatType == 2 == c.IsGroup);
-                    return recentMsg?.Time ?? 0;
+
+                    return recentMsg?.ProcessedTimestamp.Ticks ?? recentMsg?.Time ?? 0;
                 }).ToList();
 
                 Debug.WriteLine($"從最近聯繫人創建了 {chatItems.Count} 個聊天項目");
@@ -1773,14 +1884,12 @@ namespace NapcatUWP.Controls
                     using (var query = selectOldMessagesCommand.ExecuteReader())
                     {
                         while (query.Read())
-                        {
                             messagesToUpdate.Add((
                                 Convert.ToInt64(query["ChatId"]),
                                 Convert.ToInt64(query["SenderId"]),
                                 Convert.ToInt32(query["IsGroup"]) == 1,
                                 Convert.ToString(query["SenderName"]) ?? ""
                             ));
-                        }
                     }
 
                     Debug.WriteLine($"找到 {messagesToUpdate.Count} 條需要檢查用戶信息的消息");
@@ -1794,7 +1903,7 @@ namespace NapcatUWP.Controls
 
                     foreach (var (chatId, senderId, isGroup, oldSenderName) in messagesToUpdate)
                     {
-                        string newSenderName = "";
+                        var newSenderName = "";
 
                         if (isGroup)
                         {
@@ -1808,20 +1917,14 @@ namespace NapcatUWP.Controls
                             {
                                 // 沒有群組成員信息，嘗試從好友列表獲取
                                 var friendName = GetFriendNameById(senderId);
-                                if (!friendName.StartsWith("用戶 "))
-                                {
-                                    newSenderName = friendName;
-                                }
+                                if (!friendName.StartsWith("用戶 ")) newSenderName = friendName;
                             }
                         }
                         else
                         {
                             // 私聊消息：從好友列表獲取
                             var friendName = GetFriendNameById(senderId);
-                            if (!friendName.StartsWith("用戶 "))
-                            {
-                                newSenderName = friendName;
-                            }
+                            if (!friendName.StartsWith("用戶 ")) newSenderName = friendName;
                         }
 
                         // 只有當找到了更好的名稱時才更新
@@ -1852,41 +1955,182 @@ namespace NapcatUWP.Controls
             }
         }
 
+
         /// <summary>
-        ///     修復時間戳問題 - 針對 Windows Phone
+        ///     改進版時間戳處理 - 修復時區問題
         /// </summary>
-        public static void FixTimestampIssue()
+        public static DateTime ProcessTimestamp(DateTime originalTimestamp)
         {
             try
             {
-                // 檢查是否是 Windows Phone
-                var deviceFamily = Windows.System.Profile.AnalyticsInfo.VersionInfo.DeviceFamily;
-                if (deviceFamily != "Windows.Mobile")
+                // 先檢查時間戳是否合理
+                var now = DateTime.Now;
+                var timeDifference = Math.Abs((now - originalTimestamp).TotalHours);
+
+                Debug.WriteLine(
+                    $"ProcessTimestamp: 原始時間={originalTimestamp:yyyy-MM-dd HH:mm:ss}, 當前時間={now:yyyy-MM-dd HH:mm:ss}, 時差={timeDifference:F1}小時");
+
+                // 如果時間戳看起來合理（在過去30天內且不超過當前時間1小時），直接使用
+                if (originalTimestamp >= now.AddDays(-30) && originalTimestamp <= now.AddHours(1))
                 {
-                    Debug.WriteLine("不是 Windows Phone，跳過時間戳修復");
-                    return;
+                    Debug.WriteLine($"ProcessTimestamp: 時間戳合理，直接使用: {originalTimestamp:yyyy-MM-dd HH:mm:ss}");
+                    return originalTimestamp;
                 }
 
-                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
-                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                // 檢查是否是常見的時區問題（8小時偏差）
+                if (Math.Abs(timeDifference - 8) < 0.1)
                 {
-                    db.Open();
+                    // 很可能是UTC時間需要轉換為本地時間
+                    var utcTime = DateTime.SpecifyKind(originalTimestamp, DateTimeKind.Utc);
+                    var localTime = utcTime.ToLocalTime();
+                    Debug.WriteLine(
+                        $"ProcessTimestamp: 修正8小時時區偏差: {originalTimestamp:yyyy-MM-dd HH:mm:ss} -> {localTime:yyyy-MM-dd HH:mm:ss}");
+                    return localTime;
+                }
 
-                    // 獲取系統時區偏移
-                    var localTimeZone = TimeZoneInfo.Local;
-                    var offsetHours = localTimeZone.BaseUtcOffset.TotalHours;
-                    Debug.WriteLine($"當前時區偏移: {offsetHours} 小時");
-
-                    // 如果時區偏移是 +8（中國時區），則修復時間戳
-                    if (Math.Abs(offsetHours - 8) < 0.1) // 允許小的浮點誤差
+                // 如果時間戳在未來，可能需要減去時區偏移
+                if (originalTimestamp > now.AddHours(1))
+                {
+                    var correctedTime = originalTimestamp.AddHours(-8);
+                    if (correctedTime >= now.AddDays(-30) && correctedTime <= now.AddHours(1))
                     {
-                        var updateCommand = new SqliteCommand(@"
-                            UPDATE Messages 
-                            SET Timestamp = datetime(Timestamp, '+8 hours') 
-                            WHERE Timestamp < datetime('now', 'localtime')", db);
+                        Debug.WriteLine(
+                            $"ProcessTimestamp: 未來時間戳修正: {originalTimestamp:yyyy-MM-dd HH:mm:ss} -> {correctedTime:yyyy-MM-dd HH:mm:ss}");
+                        return correctedTime;
+                    }
+                }
 
-                        var affectedRows = updateCommand.ExecuteNonQuery();
-                        Debug.WriteLine($"Windows Phone 時間戳修復完成，更新了 {affectedRows} 條記錄");
+                // 如果時間戳太舊，可能需要加上時區偏移
+                if (originalTimestamp < now.AddDays(-1))
+                {
+                    var correctedTime = originalTimestamp.AddHours(8);
+                    if (correctedTime >= now.AddDays(-30) && correctedTime <= now.AddHours(1))
+                    {
+                        Debug.WriteLine(
+                            $"ProcessTimestamp: 過舊時間戳修正: {originalTimestamp:yyyy-MM-dd HH:mm:ss} -> {correctedTime:yyyy-MM-dd HH:mm:ss}");
+                        return correctedTime;
+                    }
+                }
+
+                // 嘗試按照不同的時區類型處理
+                DateTime processedTime;
+
+                if (originalTimestamp.Kind == DateTimeKind.Utc)
+                {
+                    // 如果是UTC時間，直接轉換為本地時間
+                    processedTime = originalTimestamp.ToLocalTime();
+                    Debug.WriteLine($"ProcessTimestamp: UTC時間轉換為本地時間: {processedTime:yyyy-MM-dd HH:mm:ss}");
+                }
+                else if (originalTimestamp.Kind == DateTimeKind.Unspecified)
+                {
+                    // 如果時間類型未指定，嘗試不同的處理方式
+                    var utcTime = DateTime.SpecifyKind(originalTimestamp, DateTimeKind.Utc);
+                    var localTime = utcTime.ToLocalTime();
+
+                    // 檢查轉換後的時間是否更合理
+                    var localTimeDifference = Math.Abs((now - localTime).TotalHours);
+                    if (localTimeDifference < timeDifference)
+                    {
+                        processedTime = localTime;
+                        Debug.WriteLine($"ProcessTimestamp: 未指定類型時間當作UTC處理: {processedTime:yyyy-MM-dd HH:mm:ss}");
+                    }
+                    else
+                    {
+                        processedTime = originalTimestamp;
+                        Debug.WriteLine($"ProcessTimestamp: 未指定類型時間保持原樣: {processedTime:yyyy-MM-dd HH:mm:ss}");
+                    }
+                }
+                else
+                {
+                    // 如果已經是本地時間，檢查是否需要進一步調整
+                    processedTime = originalTimestamp;
+                    Debug.WriteLine($"ProcessTimestamp: 本地時間保持原樣: {processedTime:yyyy-MM-dd HH:mm:ss}");
+                }
+
+                return processedTime;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ProcessTimestamp: 處理時間戳時發生錯誤: {ex.Message}");
+                // 如果處理失敗，返回原始時間戳
+                return originalTimestamp;
+            }
+        }
+
+        /// <summary>
+        ///     新增：修復數據庫中所有消息的時間戳問題
+        /// </summary>
+        public static void FixAllTimestampIssues()
+        {
+            try
+            {
+                Debug.WriteLine("開始修復所有消息的時間戳問題");
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var connection = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    connection.Open();
+
+                    // 查詢所有消息
+                    var query = @"
+                SELECT MessageId, ChatId, IsGroup, Timestamp 
+                FROM Messages 
+                ORDER BY Timestamp";
+
+                    using (var command = new SqliteCommand(query, connection))
+                    {
+                        using (var reader = command.ExecuteReader())
+                        {
+                            var updates = new List<(long messageId, DateTime correctedTime)>();
+
+                            while (reader.Read())
+                            {
+                                // 使用正確的 Microsoft.Data.Sqlite API
+                                var messageId = Convert.ToInt64(reader["MessageId"]);
+                                var timestampStr = Convert.ToString(reader["Timestamp"]);
+
+                                if (DateTime.TryParse(timestampStr, out var originalTime))
+                                {
+                                    // 重新處理時間戳
+                                    var correctedTime = ProcessTimestamp(originalTime);
+
+                                    // 如果時間不同，加入更新列表
+                                    if (Math.Abs((correctedTime - originalTime).TotalMinutes) > 1)
+                                        updates.Add((messageId, correctedTime));
+                                }
+                            }
+
+
+                            // 批量更新時間戳
+                            if (updates.Count > 0)
+                            {
+                                Debug.WriteLine($"需要更新 {updates.Count} 條消息的時間戳");
+
+                                using (var transaction = connection.BeginTransaction())
+                                {
+                                    var updateQuery =
+                                        "UPDATE Messages SET Timestamp = @timestamp WHERE MessageId = @messageId";
+                                    using (var updateCommand = new SqliteCommand(updateQuery, connection, transaction))
+                                    {
+                                        foreach (var (messageId, correctedTime) in updates)
+                                        {
+                                            updateCommand.Parameters.Clear();
+                                            updateCommand.Parameters.AddWithValue("@timestamp",
+                                                correctedTime.ToString("yyyy-MM-dd HH:mm:ss"));
+                                            updateCommand.Parameters.AddWithValue("@messageId", messageId);
+                                            updateCommand.ExecuteNonQuery();
+                                        }
+                                    }
+
+                                    transaction.Commit();
+                                    Debug.WriteLine($"成功更新了 {updates.Count} 條消息的時間戳");
+                                }
+                            }
+                            else
+                            {
+                                Debug.WriteLine("沒有需要更新的時間戳");
+                            }
+                        }
                     }
                 }
             }
@@ -1897,36 +2141,67 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        ///     修正版時間戳處理 - 根據設備類型調整
+        ///     強制修復時間戳問題 - 針對特定的時區偏移問題
         /// </summary>
-        public static DateTime ProcessTimestamp(DateTime originalTimestamp)
+        public static void ForceFixTimestampOffset()
         {
             try
             {
-                // 檢查是否是 Windows Phone
-                var deviceFamily = Windows.System.Profile.AnalyticsInfo.VersionInfo.DeviceFamily;
-                if (deviceFamily == "Windows.Mobile")
+                Debug.WriteLine("開始強制修復時間戳偏移問題");
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var connection = new SqliteConnection($"Filename={dbpath}"))
                 {
-                    // Windows Phone 需要調整時區
-                    var localTimeZone = TimeZoneInfo.Local;
-                    if (Math.Abs(localTimeZone.BaseUtcOffset.TotalHours - 8) < 0.1) // 中國時區
+                    connection.Open();
+
+                    // 檢查是否有明顯錯誤的時間戳（比如比當前時間晚很多小時的）
+                    var now = DateTime.Now;
+                    var checkQuery = @"
+                SELECT COUNT(*) FROM Messages 
+                WHERE datetime(Timestamp) > datetime('now', '+1 hour')";
+
+                    using (var checkCommand = new SqliteCommand(checkQuery, connection))
                     {
-                        // 如果原始時間戳看起來已經被錯誤地減去了8小時，則加回來
-                        var timeDiff = DateTime.Now - originalTimestamp;
-                        if (timeDiff.TotalHours > 7 && timeDiff.TotalHours < 9)
+                        var futureMessagesCount = Convert.ToInt32(checkCommand.ExecuteScalar());
+                        Debug.WriteLine($"發現 {futureMessagesCount} 條時間戳在未來的消息");
+
+                        if (futureMessagesCount > 0)
                         {
-                            return originalTimestamp.AddHours(8);
+                            // 如果有未來的消息，很可能是時區問題，統一減去時區偏移
+                            var timeZoneOffset = TimeZoneInfo.Local.BaseUtcOffset;
+                            Debug.WriteLine($"當前時區偏移: {timeZoneOffset}");
+
+                            // 如果是東八區（+8小時），則可能需要減去時區偏移
+                            if (Math.Abs(timeZoneOffset.TotalHours - 8) < 0.1)
+                            {
+                                var updateQuery = @"
+                            UPDATE Messages 
+                            SET Timestamp = datetime(Timestamp, '-8 hours')
+                            WHERE datetime(Timestamp) > datetime('now', '+1 hour')";
+
+                                using (var updateCommand = new SqliteCommand(updateQuery, connection))
+                                {
+                                    var updatedRows = updateCommand.ExecuteNonQuery();
+                                    Debug.WriteLine($"修正了 {updatedRows} 條消息的時間戳（減去8小時）");
+                                }
+                            }
                         }
                     }
                 }
-
-                return originalTimestamp;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"處理時間戳時發生錯誤: {ex.Message}");
-                return originalTimestamp;
+                Debug.WriteLine($"強制修復時間戳時發生錯誤: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        ///     改進版時間戳修復方法 - 替換原有的 FixTimestampIssue
+        /// </summary>
+        public static void FixTimestampIssue()
+        {
+            // 調用新的全面修復方法
+            FixAllTimestampIssues();
         }
 
         #endregion
@@ -1936,7 +2211,7 @@ namespace NapcatUWP.Controls
         #region 數據庫管理和統計
 
         /// <summary>
-        /// 刪除所有聊天資料
+        ///     刪除所有聊天資料
         /// </summary>
         public static void DeleteAllChatData()
         {
@@ -1980,7 +2255,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 獲取數據庫統計信息
+        ///     獲取數據庫統計信息
         /// </summary>
         public static DatabaseStatistics GetDatabaseStatistics()
         {
@@ -2038,7 +2313,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 獲取最近的聊天消息（用於展示）
+        ///     獲取最近的聊天消息（用於展示）
         /// </summary>
         public static List<ChatMessage> GetRecentChatMessages(int limit = 10)
         {

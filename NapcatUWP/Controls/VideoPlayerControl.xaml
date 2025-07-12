@@ -5,11 +5,15 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    d:DesignHeight="400"
-    d:DesignWidth="600">
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch">
 
-    <!-- 全屏背景覆盖层 -->
-    <Grid x:Name="OverlayGrid" Background="#CC000000" Tapped="OverlayGrid_Tapped">
+    <!-- 全屏背景覆盖层 - 確保填充整個控件 -->
+    <Grid x:Name="OverlayGrid" 
+          Background="#CC000000" 
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch"
+          Tapped="OverlayGrid_Tapped">
 
         <!-- 视频播放器容器 -->
         <Border x:Name="PlayerContainer" 
@@ -19,6 +23,8 @@
                 VerticalAlignment="Center"
                 MaxWidth="800" 
                 MaxHeight="600"
+                MinWidth="400"
+                MinHeight="300"
                 Tapped="PlayerContainer_Tapped">
 
             <Grid>
@@ -31,7 +37,7 @@
                 <!-- 标题栏 -->
                 <Grid Grid.Row="0" Background="#33FFFFFF" Height="40">
                     <TextBlock x:Name="TitleTextBlock" 
-                               Text="视频播放器" 
+                               Text="視頻播放器" 
                                Foreground="White" 
                                FontSize="16" 
                                VerticalAlignment="Center" 
@@ -51,7 +57,7 @@
                 </Grid>
 
                 <!-- 视频播放区域 -->
-                <Grid Grid.Row="1" Background="Black">
+                <Grid Grid.Row="1" Background="Black" MinHeight="240">
                     <MediaElement x:Name="VideoPlayer" 
                                   HorizontalAlignment="Stretch" 
                                   VerticalAlignment="Stretch"
@@ -91,7 +97,7 @@
 
                     <!-- 错误信息 -->
                     <TextBlock x:Name="ErrorTextBlock" 
-                               Text="视频加载失败" 
+                               Text="視頻加載失敗" 
                                Foreground="Red" 
                                FontSize="16" 
                                HorizontalAlignment="Center" 

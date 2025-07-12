@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 
@@ -30,6 +31,9 @@ namespace NapcatUWP.Models
         public string Message { get; set; }
         public string Wording { get; set; }
         public string ParsedMessage { get; set; }
+
+        // 新增：處理後的時間戳（本地時間）
+        public DateTime ProcessedTimestamp { get; set; }
 
         // 發送者信息
         public MessageSender Sender { get; set; }

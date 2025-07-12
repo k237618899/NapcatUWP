@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using NapcatUWP.Tools;
 
 namespace NapcatUWP.Models
@@ -147,7 +148,41 @@ namespace NapcatUWP.Models
         /// </summary>
         public bool IsReply => MessageSegmentParser.HasSegmentType(Segments, "reply");
 
-        public string TimeString => Timestamp.ToString("HH:mm");
+        /// <summary>
+        ///     動態時間字符串屬性 - 支持時區變化
+        /// </summary>
+        public string TimeString
+        {
+            get
+            {
+                try
+                {
+                    // 確保時間戳是本地時間
+                    var localTime = Timestamp.Kind == DateTimeKind.Utc ? Timestamp.ToLocalTime() : Timestamp;
+
+                    // 檢查是否是今天
+                    if (localTime.Date == DateTime.Today)
+                        // 今天的消息只顯示時間
+                        return localTime.ToString("HH:mm");
+
+                    if (localTime.Date == DateTime.Today.AddDays(-1))
+                        // 昨天的消息顯示 "昨天 HH:mm"
+                        return $"昨天 {localTime.ToString("HH:mm")}";
+
+                    if (localTime.Year == DateTime.Now.Year)
+                        // 今年的消息顯示 "MM/dd HH:mm"
+                        return localTime.ToString("MM/dd HH:mm");
+
+                    // 其他年份的消息顯示完整日期
+                    return localTime.ToString("yyyy/MM/dd HH:mm");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"生成TimeString時發生錯誤: {ex.Message}");
+                    return Timestamp.ToString("HH:mm");
+                }
+            }
+        }
 
         public event PropertyChangedEventHandler PropertyChanged;
 

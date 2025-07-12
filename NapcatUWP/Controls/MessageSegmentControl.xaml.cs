@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using Windows.UI;
+using Windows.UI.Core;
 using Windows.UI.Text;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -12,18 +13,48 @@ using NapcatUWP.Models;
 namespace NapcatUWP.Controls
 {
     /// <summary>
-    /// 视频播放事件参数类
+    ///     视频播放事件参数类
     /// </summary>
     public class VideoPlayEventArgs : EventArgs
     {
-        public string VideoUrl { get; }
-        public string Title { get; }
-
         public VideoPlayEventArgs(string videoUrl, string title = "视频播放")
         {
             VideoUrl = videoUrl;
             Title = title;
         }
+
+        public string VideoUrl { get; }
+        public string Title { get; }
+    }
+
+    /// <summary>
+    ///     圖片查看事件參數類
+    /// </summary>
+    public class ImageViewEventArgs : EventArgs
+    {
+        public ImageViewEventArgs(string imageUrl, string title = "圖片查看")
+        {
+            ImageUrl = imageUrl;
+            Title = title;
+        }
+
+        public string ImageUrl { get; }
+        public string Title { get; }
+    }
+
+    /// <summary>
+    ///     音頻播放事件參數類
+    /// </summary>
+    public class AudioPlayRequestEventArgs : EventArgs
+    {
+        public AudioPlayRequestEventArgs(string audioUrl, string title = "音頻播放")
+        {
+            AudioUrl = audioUrl;
+            Title = title;
+        }
+
+        public string AudioUrl { get; }
+        public string Title { get; }
     }
 
     public sealed partial class MessageSegmentControl : UserControl
@@ -32,12 +63,12 @@ namespace NapcatUWP.Controls
             DependencyProperty.Register(nameof(Segments), typeof(IList<MessageSegment>), typeof(MessageSegmentControl),
                 new PropertyMetadata(null, OnSegmentsChanged));
 
-        // 视频播放事件
-        public event EventHandler<VideoPlayEventArgs> VideoPlayRequested;
-
         public MessageSegmentControl()
         {
             InitializeComponent();
+
+            // 訂閱音頻播放狀態改變事件
+            AudioPlayerManager.Instance.PlaybackStateChanged += AudioPlayerManager_PlaybackStateChanged;
         }
 
         public IList<MessageSegment> Segments
@@ -45,6 +76,11 @@ namespace NapcatUWP.Controls
             get => (IList<MessageSegment>)GetValue(SegmentsProperty);
             set => SetValue(SegmentsProperty, value);
         }
+
+        // 各種媒體播放事件
+        public event EventHandler<VideoPlayEventArgs> VideoPlayRequested;
+        public event EventHandler<ImageViewEventArgs> ImageViewRequested;
+        public event EventHandler<AudioPlayRequestEventArgs> AudioPlayRequested;
 
         private static void OnSegmentsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
@@ -63,6 +99,27 @@ namespace NapcatUWP.Controls
                 var element = CreateSegmentElement(segment);
                 if (element != null) ContentPanel.Children.Add(element);
             }
+        }
+
+        private void AudioPlayerManager_PlaybackStateChanged(object sender, AudioPlayEventArgs e)
+        {
+            // 更新音頻控件的顯示狀態
+            UpdateAudioSegmentState(e.AudioUrl, e.IsPlaying);
+        }
+
+        private void UpdateAudioSegmentState(string audioUrl, bool isPlaying)
+        {
+            // 遍歷所有音頻段並更新狀態
+            foreach (var child in ContentPanel.Children)
+                if (child is Border border && border.Tag?.ToString() == audioUrl)
+                    UpdateAudioBorderState(border, isPlaying);
+        }
+
+        private void UpdateAudioBorderState(Border border, bool isPlaying)
+        {
+            if (border.Child is StackPanel stackPanel && stackPanel.Children.Count >= 2)
+                if (stackPanel.Children[1] is TextBlock textBlock)
+                    textBlock.Text = isPlaying ? "⏸️ 正在播放..." : "🎵 語音消息";
         }
 
         private FrameworkElement CreateSegmentElement(MessageSegment segment)
@@ -101,10 +158,7 @@ namespace NapcatUWP.Controls
         {
             var imageSegment = new ImageSegment();
             // 複製數據
-            foreach (var kvp in segment.Data)
-            {
-                imageSegment.Data[kvp.Key] = kvp.Value;
-            }
+            foreach (var kvp in segment.Data) imageSegment.Data[kvp.Key] = kvp.Value;
 
             return imageSegment;
         }
@@ -112,10 +166,7 @@ namespace NapcatUWP.Controls
         private AtSegment CreateAtSegmentFromData(MessageSegment segment)
         {
             var atSegment = new AtSegment();
-            foreach (var kvp in segment.Data)
-            {
-                atSegment.Data[kvp.Key] = kvp.Value;
-            }
+            foreach (var kvp in segment.Data) atSegment.Data[kvp.Key] = kvp.Value;
 
             return atSegment;
         }
@@ -123,10 +174,7 @@ namespace NapcatUWP.Controls
         private FaceSegment CreateFaceSegmentFromData(MessageSegment segment)
         {
             var faceSegment = new FaceSegment();
-            foreach (var kvp in segment.Data)
-            {
-                faceSegment.Data[kvp.Key] = kvp.Value;
-            }
+            foreach (var kvp in segment.Data) faceSegment.Data[kvp.Key] = kvp.Value;
 
             return faceSegment;
         }
@@ -134,10 +182,7 @@ namespace NapcatUWP.Controls
         private RecordSegment CreateRecordSegmentFromData(MessageSegment segment)
         {
             var recordSegment = new RecordSegment();
-            foreach (var kvp in segment.Data)
-            {
-                recordSegment.Data[kvp.Key] = kvp.Value;
-            }
+            foreach (var kvp in segment.Data) recordSegment.Data[kvp.Key] = kvp.Value;
 
             return recordSegment;
         }
@@ -145,10 +190,7 @@ namespace NapcatUWP.Controls
         private VideoSegment CreateVideoSegmentFromData(MessageSegment segment)
         {
             var videoSegment = new VideoSegment();
-            foreach (var kvp in segment.Data)
-            {
-                videoSegment.Data[kvp.Key] = kvp.Value;
-            }
+            foreach (var kvp in segment.Data) videoSegment.Data[kvp.Key] = kvp.Value;
 
             return videoSegment;
         }
@@ -156,10 +198,7 @@ namespace NapcatUWP.Controls
         private FileSegment CreateFileSegmentFromData(MessageSegment segment)
         {
             var fileSegment = new FileSegment();
-            foreach (var kvp in segment.Data)
-            {
-                fileSegment.Data[kvp.Key] = kvp.Value;
-            }
+            foreach (var kvp in segment.Data) fileSegment.Data[kvp.Key] = kvp.Value;
 
             return fileSegment;
         }
@@ -167,10 +206,7 @@ namespace NapcatUWP.Controls
         private ReplySegment CreateReplySegmentFromData(MessageSegment segment)
         {
             var replySegment = new ReplySegment();
-            foreach (var kvp in segment.Data)
-            {
-                replySegment.Data[kvp.Key] = kvp.Value;
-            }
+            foreach (var kvp in segment.Data) replySegment.Data[kvp.Key] = kvp.Value;
 
             return replySegment;
         }
@@ -225,6 +261,51 @@ namespace NapcatUWP.Controls
             else
                 border.Child = CreateImagePlaceholder("🖼️ 圖片");
 
+            // 添加點擊事件處理
+            border.Tapped += (sender, e) =>
+            {
+                try
+                {
+                    var imageUrl = segment?.Url;
+                    if (!string.IsNullOrEmpty(imageUrl))
+                    {
+                        Debug.WriteLine($"MessageSegmentControl: 請求查看圖片 - URL: {imageUrl}");
+                        ImageViewRequested?.Invoke(this, new ImageViewEventArgs(imageUrl));
+                    }
+                    else
+                    {
+                        Debug.WriteLine("MessageSegmentControl: 圖片URL為空，無法查看");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"MessageSegmentControl: 處理圖片點擊時發生錯誤: {ex.Message}");
+                }
+            };
+
+            // 添加指針進入和離開事件來模擬 cursor 效果
+            border.PointerEntered += (sender, e) =>
+            {
+                try
+                {
+                    Window.Current.CoreWindow.PointerCursor = new CoreCursor(CoreCursorType.Hand, 1);
+                }
+                catch
+                {
+                }
+            };
+
+            border.PointerExited += (sender, e) =>
+            {
+                try
+                {
+                    Window.Current.CoreWindow.PointerCursor = new CoreCursor(CoreCursorType.Arrow, 1);
+                }
+                catch
+                {
+                }
+            };
+
             return border;
         }
 
@@ -273,13 +354,17 @@ namespace NapcatUWP.Controls
 
         private Border CreateRecordSegment(RecordSegment segment)
         {
+            var audioUrl = segment?.Url ?? segment?.File ?? "";
+            var isCurrentlyPlaying = AudioPlayerManager.Instance.IsAudioPlaying(audioUrl);
+
             var border = new Border
             {
                 Background = new SolidColorBrush(Color.FromArgb(255, 76, 175, 80)),
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(12, 8, 12, 8),
                 Margin = new Thickness(0, 4, 0, 4),
-                MinWidth = 120
+                MinWidth = 120,
+                Tag = audioUrl // 用於識別音頻段
             };
 
             var stackPanel = new StackPanel
@@ -298,7 +383,8 @@ namespace NapcatUWP.Controls
 
             var textBlock = new TextBlock
             {
-                Text = segment?.Magic == true ? "變聲語音" : "語音消息",
+                Text = isCurrentlyPlaying ? "⏸️ 正在播放..." :
+                    segment?.Magic == true ? "🎵 變聲語音" : "🎵 語音消息",
                 Foreground = new SolidColorBrush(Colors.White),
                 FontSize = 14,
                 VerticalAlignment = VerticalAlignment.Center
@@ -307,6 +393,57 @@ namespace NapcatUWP.Controls
             stackPanel.Children.Add(icon);
             stackPanel.Children.Add(textBlock);
             border.Child = stackPanel;
+
+            // 添加點擊事件處理
+            border.Tapped += (sender, e) =>
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(audioUrl))
+                    {
+                        Debug.WriteLine($"MessageSegmentControl: 請求播放音頻 - URL: {audioUrl}");
+
+                        // 直接調用音頻管理器
+                        AudioPlayerManager.Instance.PlayOrPauseAudio(audioUrl,
+                            segment?.Magic == true ? "變聲語音" : "語音消息");
+
+                        // 也可以觸發事件（如果需要的話）
+                        AudioPlayRequested?.Invoke(this, new AudioPlayRequestEventArgs(audioUrl,
+                            segment?.Magic == true ? "變聲語音" : "語音消息"));
+                    }
+                    else
+                    {
+                        Debug.WriteLine("MessageSegmentControl: 音頻URL為空，無法播放");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"MessageSegmentControl: 處理音頻點擊時發生錯誤: {ex.Message}");
+                }
+            };
+
+            // 添加指針進入和離開事件來模擬 cursor 效果
+            border.PointerEntered += (sender, e) =>
+            {
+                try
+                {
+                    Window.Current.CoreWindow.PointerCursor = new CoreCursor(CoreCursorType.Hand, 1);
+                }
+                catch
+                {
+                }
+            };
+
+            border.PointerExited += (sender, e) =>
+            {
+                try
+                {
+                    Window.Current.CoreWindow.PointerCursor = new CoreCursor(CoreCursorType.Arrow, 1);
+                }
+                catch
+                {
+                }
+            };
 
             return border;
         }

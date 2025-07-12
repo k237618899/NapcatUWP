@@ -131,8 +131,12 @@
       <DependentUpon>App.xaml</DependentUpon>
     </Compile>
     <Compile Include="Controls\APIHandler\OneBotAPIHandler.cs" />
+    <Compile Include="Controls\AudioPlayerManager.cs" />
     <Compile Include="Controls\DataAccess.cs" />
     <Compile Include="Controls\DatabaseStatistics.cs" />
+    <Compile Include="Controls\ImageViewerControl.xaml.cs">
+      <DependentUpon>ImageViewerControl.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Controls\MessageSegmentControl.xaml.cs">
       <DependentUpon>MessageSegmentControl.xaml</DependentUpon>
     </Compile>
@@ -235,6 +239,10 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Page Include="Controls\ImageViewerControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Controls\MessageSegmentControl.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
