@@ -139,14 +139,130 @@ namespace NapcatUWP.Controls.APIHandler
                     {
                         HandleGroupMemberInfoResponse(response, echo);
                     }
-                    else if (echo.StartsWith("get_msg_")) // 新增：處理 get_msg 響應
+                    else if (echo.StartsWith("get_msg_"))
                     {
                         HandleGetMessageResponse(response, echo);
+                    }
+                    // 新增：處理來自 ChatCreationHelper 的歷史消息請求
+                    else if (echo.StartsWith("friend_history_"))
+                    {
+                        var parts = echo.Split('_');
+                        if (parts.Length >= 3 && long.TryParse(parts[2], out var friendUserId))
+                            HandleChatCreationHistoryResponse(response, friendUserId, false, echo);
+                    }
+                    else if (echo.StartsWith("group_history_"))
+                    {
+                        var parts = echo.Split('_');
+                        if (parts.Length >= 3 && long.TryParse(parts[2], out var groupId))
+                            HandleChatCreationHistoryResponse(response, groupId, true, echo);
                     }
 
                     break;
             }
         }
+
+        /// <summary>
+        ///     處理聊天創建時的歷史消息響應 - 增強版
+        /// </summary>
+        private void HandleChatCreationHistoryResponse(ResponseEntity response, long chatId, bool isGroup, string echo)
+        {
+            try
+            {
+                Debug.WriteLine($"OneBotAPIHandler: 處理聊天創建歷史消息響應 - ChatId: {chatId}, IsGroup: {isGroup}");
+
+                if (response.Status == "ok" && response.Data != null)
+                {
+                    var historyMessages = new List<ChatMessage>();
+
+                    try
+                    {
+                        // 解析歷史消息數據
+                        JToken messagesArray = null;
+
+                        if (response.Data.Type == JTokenType.Object && response.Data["messages"] != null)
+                            messagesArray = response.Data["messages"];
+                        else if (response.Data.Type == JTokenType.Array)
+                            messagesArray = response.Data;
+
+                        if (messagesArray != null && messagesArray.Type == JTokenType.Array)
+                            foreach (var messageToken in messagesArray)
+                                try
+                                {
+                                    var chatMessage = ParseHistoryMessage(messageToken, isGroup, chatId);
+                                    if (chatMessage != null)
+                                    {
+                                        historyMessages.Add(chatMessage);
+
+                                        // 保存到數據庫
+                                        var messageId = messageToken.Value<long>("message_id");
+                                        DataAccess.SaveMessage(messageId, chatId, isGroup, chatMessage.Content,
+                                            chatMessage.MessageType, chatMessage.SenderId, chatMessage.SenderName,
+                                            chatMessage.IsFromMe, chatMessage.Timestamp, chatMessage.Segments);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine($"OneBotAPIHandler: 解析單條創建歷史消息時發生錯誤: {ex.Message}");
+                                }
+
+                        Debug.WriteLine($"OneBotAPIHandler: 聊天創建歷史消息解析完成，共 {historyMessages.Count} 條");
+
+                        // 使用 ChatCreationHelper 處理響應
+                        ChatCreationHelper.ProcessHistoryMessageResponse(response.ToString(), echo);
+
+                        // 通知UI刷新聊天列表
+                        Task.Run(async () =>
+                        {
+                            await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                                CoreDispatcherPriority.Normal, () =>
+                                {
+                                    _mainView?.RefreshChatList();
+                                    Debug.WriteLine("已觸發聊天列表刷新");
+                                });
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"OneBotAPIHandler: 處理聊天創建歷史消息數據時發生錯誤: {ex.Message}");
+                        // 處理失敗時通知MainView清除加載提示
+                        NotifyHistoryLoadingError(chatId, isGroup);
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine($"OneBotAPIHandler: 聊天創建歷史消息請求失敗 - Status: {response.Status}");
+                    // 請求失敗時通知MainView清除加載提示
+                    NotifyHistoryLoadingError(chatId, isGroup);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"OneBotAPIHandler: 處理聊天創建歷史消息響應時發生錯誤: {ex.Message}");
+                // 發生異常時通知MainView清除加載提示
+                NotifyHistoryLoadingError(chatId, isGroup);
+            }
+        }
+
+        /// <summary>
+        ///     通知MainView歷史消息加載錯誤
+        /// </summary>
+        private void NotifyHistoryLoadingError(long chatId, bool isGroup)
+        {
+            try
+            {
+                Task.Run(async () =>
+                {
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                        CoreDispatcherPriority.Normal,
+                        () => { _mainView?.HandleHistoryLoadingError(chatId, isGroup); });
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"OneBotAPIHandler: 通知歷史消息加載錯誤時發生異常: {ex.Message}");
+            }
+        }
+
 
         /// <summary>
         ///     請求群組成員信息
@@ -339,7 +455,7 @@ namespace NapcatUWP.Controls.APIHandler
         }
 
         /// <summary>
-        ///     處理聊天歷史消息響應
+        ///     修改 HandleChatHistoryResponse 方法 - 增強錯誤處理
         /// </summary>
         private void HandleChatHistoryResponse(ResponseEntity response, long chatId, bool isGroup)
         {
@@ -389,6 +505,9 @@ namespace NapcatUWP.Controls.APIHandler
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"OneBotAPIHandler: 解析歷史消息數據時發生錯誤: {ex.Message}");
+                        // 解析失敗時通知UI清除加載提示
+                        NotifyHistoryLoadingError(chatId, isGroup);
+                        return;
                     }
 
                     Debug.WriteLine($"OneBotAPIHandler: 成功解析 {historyMessages.Count} 條歷史消息");
@@ -404,11 +523,15 @@ namespace NapcatUWP.Controls.APIHandler
                 else
                 {
                     Debug.WriteLine($"OneBotAPIHandler: 聊天歷史消息請求失敗 - Status: {response.Status}");
+                    // 請求失敗時通知UI清除加載提示
+                    NotifyHistoryLoadingError(chatId, isGroup);
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"OneBotAPIHandler: 處理聊天歷史消息響應時發生錯誤: {ex.Message}");
+                // 發生異常時通知UI清除加載提示
+                NotifyHistoryLoadingError(chatId, isGroup);
             }
         }
 

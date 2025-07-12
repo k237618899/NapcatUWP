@@ -100,12 +100,9 @@ namespace NapcatUWP.Pages
 
             RegisterScrollEventHandlers();
 
-            // 测试视频播放器（5秒后自动测试）
-            Task.Delay(5000).ContinueWith(_ =>
-            {
-                CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal,
-                    () => { TestVideoPlayer(); });
-            });
+            // 添加群組列表點擊事件
+            GroupListView.ItemClick += GroupListView_ItemClick;
+            GroupListView.IsItemClickEnabled = true;
         }
 
         public ObservableCollection<ChatItem> ChatItems { get; set; }
@@ -842,7 +839,7 @@ namespace NapcatUWP.Pages
         }
 
         /// <summary>
-        ///     從服務器載入歷史消息（首次打開聊天時調用）
+        ///     修改 LoadHistoryFromServer 方法 - 增強錯誤處理
         /// </summary>
         private async void LoadHistoryFromServer(ChatItem chatItem)
         {
@@ -872,22 +869,76 @@ namespace NapcatUWP.Pages
                 // 請求服務器歷史消息
                 await RequestChatHistory(chatItem.ChatId, chatItem.IsGroup);
 
+                // 設置一個超時處理，如果5秒後還沒有收到響應，就清除加載提示
+                var timeoutTask = Task.Delay(5000).ContinueWith(_ =>
+                {
+                    CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                        CoreDispatcherPriority.Normal, () =>
+                        {
+                            // 檢查是否還有加載提示存在
+                            var loadingMessages = _currentMessages.Where(m =>
+                                m.MessageType == "system" && m.Content.Contains("正在載入")).ToList();
+
+                            if (loadingMessages.Any())
+                            {
+                                Debug.WriteLine("歷史消息請求超時，清除加載提示");
+                                HandleHistoryLoadingError(chatItem.ChatId, chatItem.IsGroup);
+                            }
+                        });
+                });
+
                 Debug.WriteLine($"已請求聊天歷史消息: {chatItem.Name}");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"從服務器載入歷史消息錯誤: {ex.Message}");
-                // 如果載入失敗，顯示錯誤消息
-                var errorMessage = new ChatMessage
+                // 如果載入失敗，清除加載提示並顯示錯誤消息
+                HandleHistoryLoadingError(chatItem.ChatId, chatItem.IsGroup);
+            }
+        }
+
+        /// <summary>
+        ///     處理歷史消息加載錯誤 - 清除加載提示並顯示空聊天界面
+        /// </summary>
+        /// <param name="chatId">聊天ID</param>
+        /// <param name="isGroup">是否為群組</param>
+        public void HandleHistoryLoadingError(long chatId, bool isGroup)
+        {
+            try
+            {
+                Debug.WriteLine($"處理歷史消息加載錯誤: ChatId={chatId}, IsGroup={isGroup}");
+
+                // 檢查是否是當前聊天
+                if (_currentChat != null && _currentChat.ChatId == chatId && _currentChat.IsGroup == isGroup)
                 {
-                    Content = "載入聊天記錄失敗",
-                    Timestamp = DateTime.Now,
-                    IsFromMe = false,
-                    SenderName = "系統",
-                    SenderId = -1,
-                    MessageType = "system"
-                };
-                _currentMessages.Add(errorMessage);
+                    // 清除所有系統消息（包括"正在載入聊天記錄..."）
+                    var systemMessages = _currentMessages.Where(m => m.MessageType == "system").ToList();
+                    foreach (var msg in systemMessages) _currentMessages.Remove(msg);
+
+                    // 如果沒有任何消息，顯示歡迎消息
+                    if (_currentMessages.Count == 0)
+                    {
+                        var welcomeMessage = new ChatMessage
+                        {
+                            Content = isGroup ? "歡迎來到群組聊天！" : "開始聊天吧！",
+                            Timestamp = DateTime.Now.AddMinutes(-1),
+                            IsFromMe = false,
+                            SenderName = "系統",
+                            SenderId = -1,
+                            MessageType = "system"
+                        };
+                        _currentMessages.Add(welcomeMessage);
+                    }
+
+                    // 強制滾動到底部
+                    ForceScrollToBottom();
+
+                    Debug.WriteLine($"已清除加載提示並顯示空聊天界面: {_currentChat.Name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"處理歷史消息加載錯誤時發生異常: {ex.Message}");
             }
         }
 
@@ -946,9 +997,8 @@ namespace NapcatUWP.Pages
         }
 
         /// <summary>
-        ///     處理從服務器獲取的歷史消息並更新界面
+        ///     修改 HandleHistoryMessages 方法 - 確保清除加載提示
         /// </summary>
-        // 修改 HandleHistoryMessages 方法
         public async void HandleHistoryMessages(List<ChatMessage> historyMessages, long chatId, bool isGroup)
         {
             try
@@ -961,7 +1011,7 @@ namespace NapcatUWP.Pages
                         // 檢查是否是當前聊天的歷史消息
                         if (_currentChat != null && _currentChat.ChatId == chatId && _currentChat.IsGroup == isGroup)
                         {
-                            // 清除系統提示消息
+                            // 清除系統提示消息（包括加載提示）
                             var systemMessages = _currentMessages.Where(m => m.MessageType == "system").ToList();
                             foreach (var msg in systemMessages) _currentMessages.Remove(msg);
 
@@ -998,26 +1048,40 @@ namespace NapcatUWP.Pages
             catch (Exception ex)
             {
                 Debug.WriteLine($"處理歷史消息錯誤: {ex.Message}");
+                // 發生錯誤時也要清除加載提示
+                HandleHistoryLoadingError(chatId, isGroup);
             }
         }
 
-        // 切換到聊天界面
+        // 修改 SwitchToChatInterface 方法
         private void SwitchToChatInterface()
         {
-            // 隱藏所有列表頁面
-            ChatListView.Visibility = Visibility.Collapsed;
-            ContactsScrollViewer.Visibility = Visibility.Collapsed;
-            GroupListView.Visibility = Visibility.Collapsed;
-            SettingsScrollViewer.Visibility = Visibility.Collapsed; // 修改這行
+            try
+            {
+                Debug.WriteLine("切換到聊天界面");
 
-            // 顯示聊天界面
-            ChatInterfaceGrid.Visibility = Visibility.Visible;
+                // 隱藏所有列表頁面
+                ChatListView.Visibility = Visibility.Collapsed;
+                ContactsScrollViewer.Visibility = Visibility.Collapsed;
+                GroupListView.Visibility = Visibility.Collapsed;
+                SettingsScrollViewer.Visibility = Visibility.Collapsed;
 
-            // 更新當前頁面狀態
-            _currentPage = "Chat";
+                // 顯示聊天界面
+                ChatInterfaceGrid.Visibility = Visibility.Visible;
 
-            // 更新系統返回鍵可見性
-            UpdateBackButtonVisibility();
+                // 更新當前頁面狀態
+                _currentPage = "Chat";
+
+                // 更新系統返回鍵可見性
+                UpdateBackButtonVisibility();
+
+                Debug.WriteLine(
+                    $"聊天界面切換完成 - ChatListView.Visibility: {ChatListView.Visibility}, ChatInterfaceGrid.Visibility: {ChatInterfaceGrid.Visibility}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"切換到聊天界面時發生錯誤: {ex.Message}");
+            }
         }
 
         // 返回按鈕點擊事件
@@ -1048,6 +1112,54 @@ namespace NapcatUWP.Pages
                 e.Handled = true;
             }
         }
+
+        /// <summary>
+        ///     公共方法：切換頁面 - 供外部調用
+        /// </summary>
+        /// <param name="pageName">頁面名稱</param>
+        public void SwitchPagePublic(string pageName)
+        {
+            SwitchPage(pageName);
+        }
+
+        /// <summary>
+        ///     修改 OpenChatDirectly 方法 - 確保正確的界面切換
+        /// </summary>
+        public void OpenChatDirectly(ChatItem chatItem)
+        {
+            try
+            {
+                Debug.WriteLine($"直接打開聊天界面: {chatItem.Name} (ID: {chatItem.ChatId})");
+
+                // 先切換到聊天頁面（確保聊天列表可見）
+                SwitchPage("Chats");
+
+                // 短暫延遲確保頁面切換完成
+                Task.Delay(50).ContinueWith(_ =>
+                {
+                    CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                    {
+                        try
+                        {
+                            // 設置選中的聊天項目
+                            ChatListView.SelectedItem = chatItem;
+
+                            // 直接調用OpenChat方法
+                            OpenChat(chatItem);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"延遲打開聊天時發生錯誤: {ex.Message}");
+                        }
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"直接打開聊天界面時發生錯誤: {ex.Message}");
+            }
+        }
+
 
         /// <summary>
         ///     更新聊天列表中的群组信息
@@ -2154,8 +2266,12 @@ namespace NapcatUWP.Pages
             {
                 Height = 60,
                 Margin = new Thickness(0, 0, 0, 1),
-                Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))
+                Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
+                Tag = friend // 保存好友信息
             };
+
+            // 添加點擊事件
+            grid.Tapped += OnFriendItemTapped;
 
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -2221,6 +2337,154 @@ namespace NapcatUWP.Pages
             return grid;
         }
 
+        /// <summary>
+        ///     好友項目點擊事件處理 - 創建或打開聊天（修正版）
+        /// </summary>
+        private async void OnFriendItemTapped(object sender, TappedRoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is Grid grid && grid.Tag is FriendInfo friend)
+                {
+                    Debug.WriteLine($"點擊好友: {friend.Nickname} (ID: {friend.UserId})");
+
+                    // 使用 ChatCreationHelper 創建聊天
+                    var success =
+                        await ChatCreationHelper.CreateChatFromFriendAsync(friend, this, MainPage.SocketClientStarter);
+
+                    if (success)
+                    {
+                        Debug.WriteLine($"成功創建或打開好友聊天: {friend.Nickname}");
+
+                        // 如果側邊欄開啟，關閉它
+                        if (_sidebarOpen)
+                        {
+                            SidebarColumn.Width = new GridLength(0);
+                            _sidebarOpen = false;
+                            UpdateOverlay();
+                        }
+
+                        // 不要在這裡切換頁面，讓 ChatCreationHelper 處理導航
+                        Debug.WriteLine("好友聊天創建完成，等待導航");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"創建好友聊天失敗: {friend.Nickname}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"處理好友點擊事件時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     群組項目點擊事件處理 - 創建或打開聊天（修正版）
+        /// </summary>
+        private async void OnGroupItemTapped(object sender, TappedRoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is Grid grid && grid.Tag is GroupInfo group)
+                {
+                    Debug.WriteLine($"點擊群組: {group.GroupName} (ID: {group.GroupId})");
+
+                    // 使用 ChatCreationHelper 創建聊天
+                    var success =
+                        await ChatCreationHelper.CreateChatFromGroupAsync(group, this, MainPage.SocketClientStarter);
+
+                    if (success)
+                    {
+                        Debug.WriteLine($"成功創建或打開群組聊天: {group.GroupName}");
+
+                        // 如果側邊欄開啟，關閉它
+                        if (_sidebarOpen)
+                        {
+                            SidebarColumn.Width = new GridLength(0);
+                            _sidebarOpen = false;
+                            UpdateOverlay();
+                        }
+
+                        // 不要在這裡切換頁面，讓 ChatCreationHelper 處理導航
+                        Debug.WriteLine("群組聊天創建完成，等待導航");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"創建群組聊天失敗: {group.GroupName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"處理群組點擊事件時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     群組列表項目點擊事件處理（修正版）
+        /// </summary>
+        private async void GroupListView_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            try
+            {
+                if (e.ClickedItem is GroupInfo group)
+                {
+                    Debug.WriteLine($"點擊群組列表項目: {group.GroupName} (ID: {group.GroupId})");
+
+                    // 使用 ChatCreationHelper 創建聊天
+                    var success =
+                        await ChatCreationHelper.CreateChatFromGroupAsync(group, this, MainPage.SocketClientStarter);
+
+                    if (success)
+                    {
+                        Debug.WriteLine($"成功創建或打開群組聊天: {group.GroupName}");
+
+                        // 如果側邊欄開啟，關閉它
+                        if (_sidebarOpen)
+                        {
+                            SidebarColumn.Width = new GridLength(0);
+                            _sidebarOpen = false;
+                            UpdateOverlay();
+                        }
+
+                        // 不要在這裡切換頁面，讓 ChatCreationHelper 處理導航
+                        Debug.WriteLine("群組聊天創建完成，等待導航");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"創建群組聊天失敗: {group.GroupName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"處理群組列表點擊事件時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     刷新聊天列表 - 公共方法供外部調用
+        /// </summary>
+        public void RefreshChatList()
+        {
+            try
+            {
+                Debug.WriteLine("刷新聊天列表");
+
+                // 重新加載緩存的聊天列表
+                LoadCachedChatList();
+
+                // 觸發UI更新
+                ChatListView.ItemsSource = ChatItems;
+
+                Debug.WriteLine($"聊天列表刷新完成，共 {ChatItems.Count} 個項目");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"刷新聊天列表時發生錯誤: {ex.Message}");
+            }
+        }
 
         private void SwitchPage(string pageName)
         {

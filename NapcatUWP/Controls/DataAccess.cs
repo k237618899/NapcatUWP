@@ -2206,6 +2206,526 @@ namespace NapcatUWP.Controls
 
         #endregion
 
+        #region 聊天創建和管理操作
+
+        /// <summary>
+        ///     檢查聊天是否已存在於聊天列表中
+        /// </summary>
+        /// <param name="account">當前登入帳號</param>
+        /// <param name="chatId">聊天ID</param>
+        /// <param name="isGroup">是否為群組聊天</param>
+        /// <returns>是否存在</returns>
+        public static bool CheckChatExists(string account, long chatId, bool isGroup)
+        {
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    var selectCommand = new SqliteCommand(@"
+                        SELECT COUNT(*) FROM ChatListCache 
+                        WHERE Account = @account AND ChatId = @chatId AND IsGroup = @isGroup", db);
+                    selectCommand.Parameters.AddWithValue("@account", account);
+                    selectCommand.Parameters.AddWithValue("@chatId", chatId);
+                    selectCommand.Parameters.AddWithValue("@isGroup", isGroup ? 1 : 0);
+
+                    var result = selectCommand.ExecuteScalar();
+                    return Convert.ToInt32(result) > 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"檢查聊天是否存在錯誤: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        ///     從好友創建聊天項目
+        /// </summary>
+        /// <param name="friendInfo">好友信息</param>
+        /// <returns>聊天項目</returns>
+        public static ChatItem CreateChatFromFriend(FriendInfo friendInfo)
+        {
+            try
+            {
+                var chatName = !string.IsNullOrEmpty(friendInfo.Remark)
+                    ? friendInfo.Remark
+                    : !string.IsNullOrEmpty(friendInfo.Nickname)
+                        ? friendInfo.Nickname
+                        : friendInfo.Nick ?? $"用戶 {friendInfo.UserId}";
+
+                var latestMessage = GetLatestMessage(friendInfo.UserId, false);
+                var lastMessage = latestMessage?.Content ?? "";
+                var lastTime = latestMessage?.Timestamp.ToString("HH:mm") ?? "";
+
+                var chatItem = new ChatItem
+                {
+                    ChatId = friendInfo.UserId,
+                    Name = chatName,
+                    LastMessage = lastMessage,
+                    LastTime = lastTime,
+                    UnreadCount = 0,
+                    AvatarColor = GetRandomAvatarColor(),
+                    IsGroup = false,
+                    MemberCount = 0
+                };
+
+                Debug.WriteLine($"從好友創建聊天項目: {chatName} (ID: {friendInfo.UserId})");
+                return chatItem;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"從好友創建聊天項目錯誤: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        ///     從群組創建聊天項目
+        /// </summary>
+        /// <param name="groupInfo">群組信息</param>
+        /// <returns>聊天項目</returns>
+        public static ChatItem CreateChatFromGroup(GroupInfo groupInfo)
+        {
+            try
+            {
+                var chatName = !string.IsNullOrEmpty(groupInfo.GroupRemark)
+                    ? groupInfo.GroupRemark
+                    : groupInfo.GroupName ?? $"群組 {groupInfo.GroupId}";
+
+                var latestMessage = GetLatestMessage(groupInfo.GroupId, true);
+                var lastMessage = latestMessage?.Content ?? "";
+                var lastTime = latestMessage?.Timestamp.ToString("HH:mm") ?? "";
+
+                var chatItem = new ChatItem
+                {
+                    ChatId = groupInfo.GroupId,
+                    Name = chatName,
+                    LastMessage = lastMessage,
+                    LastTime = lastTime,
+                    UnreadCount = 0,
+                    AvatarColor = GetRandomAvatarColor(),
+                    IsGroup = true,
+                    MemberCount = groupInfo.MemberCount
+                };
+
+                Debug.WriteLine($"從群組創建聊天項目: {chatName} (ID: {groupInfo.GroupId})");
+                return chatItem;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"從群組創建聊天項目錯誤: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        ///     添加聊天項目到聊天列表緩存
+        /// </summary>
+        /// <param name="account">當前登入帳號</param>
+        /// <param name="chatItem">聊天項目</param>
+        public static void AddChatToCache(string account, ChatItem chatItem)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(account) || chatItem == null)
+                {
+                    Debug.WriteLine("添加聊天到緩存: 參數無效");
+                    return;
+                }
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    var insertCommand = new SqliteCommand(@"
+                        INSERT OR REPLACE INTO ChatListCache 
+                        (Account, ChatId, ChatName, LastMessage, LastTime, UnreadCount, AvatarColor, IsGroup, MemberCount, LastUpdated) 
+                        VALUES (@account, @chatId, @chatName, @lastMessage, @lastTime, @unreadCount, @avatarColor, @isGroup, @memberCount, @lastUpdated)",
+                        db);
+
+                    insertCommand.Parameters.AddWithValue("@account", account);
+                    insertCommand.Parameters.AddWithValue("@chatId", chatItem.ChatId);
+                    insertCommand.Parameters.AddWithValue("@chatName", chatItem.Name ?? "");
+                    insertCommand.Parameters.AddWithValue("@lastMessage", chatItem.LastMessage ?? "");
+                    insertCommand.Parameters.AddWithValue("@lastTime", chatItem.LastTime ?? "");
+                    insertCommand.Parameters.AddWithValue("@unreadCount", chatItem.UnreadCount);
+                    insertCommand.Parameters.AddWithValue("@avatarColor", chatItem.AvatarColor ?? "#FF4A90E2");
+                    insertCommand.Parameters.AddWithValue("@isGroup", chatItem.IsGroup ? 1 : 0);
+                    insertCommand.Parameters.AddWithValue("@memberCount", chatItem.MemberCount);
+                    insertCommand.Parameters.AddWithValue("@lastUpdated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+
+                    insertCommand.ExecuteNonQuery();
+                    Debug.WriteLine($"成功添加聊天到緩存: {chatItem.Name} (ID: {chatItem.ChatId})");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"添加聊天到緩存錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     批量保存歷史消息到數據庫
+        /// </summary>
+        /// <param name="messages">歷史消息列表</param>
+        /// <param name="chatId">聊天ID</param>
+        /// <param name="isGroup">是否為群組</param>
+        public static void SaveHistoryMessages(List<ChatMessage> messages, long chatId, bool isGroup)
+        {
+            try
+            {
+                if (messages == null || messages.Count == 0)
+                {
+                    Debug.WriteLine("保存歷史消息: 沒有消息需要保存");
+                    return;
+                }
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    using (var transaction = db.BeginTransaction())
+                    {
+                        try
+                        {
+                            var insertCommand = new SqliteCommand(@"
+                                INSERT OR IGNORE INTO Messages 
+                                (MessageId, ChatId, IsGroup, Content, MessageType, SenderId, SenderName, IsFromMe, Timestamp, SegmentsJson) 
+                                VALUES (@messageId, @chatId, @isGroup, @content, @messageType, @senderId, @senderName, @isFromMe, @timestamp, @segmentsJson)",
+                                db, transaction);
+
+                            var savedCount = 0;
+                            foreach (var message in messages)
+                                try
+                                {
+                                    // 生成消息ID（如果沒有的話）
+                                    var messageId = message.Timestamp.Ticks;
+
+                                    // 序列化消息段
+                                    var segmentsJson = "";
+                                    if (message.Segments != null && message.Segments.Count > 0)
+                                        try
+                                        {
+                                            segmentsJson = JsonConvert.SerializeObject(message.Segments);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Debug.WriteLine($"序列化消息段時發生錯誤: {ex.Message}");
+                                        }
+
+                                    insertCommand.Parameters.Clear();
+                                    insertCommand.Parameters.AddWithValue("@messageId", messageId);
+                                    insertCommand.Parameters.AddWithValue("@chatId", chatId);
+                                    insertCommand.Parameters.AddWithValue("@isGroup", isGroup ? 1 : 0);
+                                    insertCommand.Parameters.AddWithValue("@content", message.Content ?? "");
+                                    insertCommand.Parameters.AddWithValue("@messageType",
+                                        message.MessageType ?? "text");
+                                    insertCommand.Parameters.AddWithValue("@senderId", message.SenderId);
+                                    insertCommand.Parameters.AddWithValue("@senderName", message.SenderName ?? "");
+                                    insertCommand.Parameters.AddWithValue("@isFromMe", message.IsFromMe ? 1 : 0);
+                                    insertCommand.Parameters.AddWithValue("@timestamp",
+                                        message.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"));
+                                    insertCommand.Parameters.AddWithValue("@segmentsJson", segmentsJson);
+
+                                    var result = insertCommand.ExecuteNonQuery();
+                                    if (result > 0) savedCount++;
+                                }
+                                catch (Exception msgEx)
+                                {
+                                    Debug.WriteLine($"保存單條歷史消息時發生錯誤: {msgEx.Message}");
+                                }
+
+                            transaction.Commit();
+                            Debug.WriteLine($"成功保存 {savedCount} 條歷史消息到數據庫 (ChatId: {chatId}, IsGroup: {isGroup})");
+                        }
+                        catch (Exception transactionEx)
+                        {
+                            transaction.Rollback();
+                            Debug.WriteLine($"保存歷史消息事務錯誤: {transactionEx.Message}");
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"批量保存歷史消息錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     根據好友信息獲取好友詳情
+        /// </summary>
+        /// <param name="userId">用戶ID</param>
+        /// <returns>好友信息</returns>
+        public static FriendInfo GetFriendInfo(long userId)
+        {
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    var selectCommand = new SqliteCommand(@"
+                        SELECT * FROM Friends 
+                        WHERE UserId = @userId", db);
+                    selectCommand.Parameters.AddWithValue("@userId", userId);
+
+                    using (var query = selectCommand.ExecuteReader())
+                    {
+                        if (query.Read())
+                            return new FriendInfo
+                            {
+                                UserId = Convert.ToInt64(query["UserId"]),
+                                Qid = Convert.ToString(query["Qid"]) ?? "",
+                                LongNick = Convert.ToString(query["LongNick"]) ?? "",
+                                BirthdayYear = Convert.ToInt32(query["BirthdayYear"]),
+                                BirthdayMonth = Convert.ToInt32(query["BirthdayMonth"]),
+                                BirthdayDay = Convert.ToInt32(query["BirthdayDay"]),
+                                Age = Convert.ToInt32(query["Age"]),
+                                Sex = Convert.ToString(query["Sex"]) ?? "",
+                                Email = Convert.ToString(query["Email"]) ?? "",
+                                PhoneNum = Convert.ToString(query["PhoneNum"]) ?? "",
+                                CategoryId = Convert.ToInt64(query["CategoryId"]),
+                                RichTime = Convert.ToInt64(query["RichTime"]),
+                                Uid = Convert.ToString(query["Uid"]) ?? "",
+                                Uin = Convert.ToString(query["Uin"]) ?? "",
+                                Nick = Convert.ToString(query["Nick"]) ?? "",
+                                Remark = Convert.ToString(query["Remark"]) ?? "",
+                                Nickname = Convert.ToString(query["Nickname"]) ?? "",
+                                Level = Convert.ToInt32(query["Level"])
+                            };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"獲取好友信息錯誤: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        ///     根據群組ID獲取群組詳情
+        /// </summary>
+        /// <param name="groupId">群組ID</param>
+        /// <returns>群組信息</returns>
+        public static GroupInfo GetGroupInfo(long groupId)
+        {
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    var selectCommand = new SqliteCommand(@"
+                        SELECT * FROM Groups 
+                        WHERE GroupId = @groupId", db);
+                    selectCommand.Parameters.AddWithValue("@groupId", groupId);
+
+                    using (var query = selectCommand.ExecuteReader())
+                    {
+                        if (query.Read())
+                            return new GroupInfo
+                            {
+                                GroupId = Convert.ToInt64(query["GroupId"]),
+                                GroupName = Convert.ToString(query["GroupName"]) ?? "",
+                                GroupRemark = Convert.ToString(query["GroupRemark"]) ?? "",
+                                MemberCount = Convert.ToInt32(query["MemberCount"]),
+                                MaxMemberCount = Convert.ToInt32(query["MaxMemberCount"]),
+                                GroupAllShut = Convert.ToInt32(query["GroupAllShut"]) == 1
+                            };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"獲取群組信息錯誤: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        #endregion
+
+        #region API 調用相關方法
+
+        /// <summary>
+        ///     調用 get_friend_msg_history API 獲取好友歷史消息
+        /// </summary>
+        /// <param name="userId">好友用戶ID</param>
+        /// <param name="count">獲取消息數量，默認20條</param>
+        /// <returns>API 請求的 JSON 字符串</returns>
+        public static string CreateGetFriendMsgHistoryRequest(long userId, int count = 20)
+        {
+            try
+            {
+                var request = new
+                {
+                    action = "get_friend_msg_history",
+                    @params = new
+                    {
+                        user_id = userId, count
+                    },
+                    echo = $"friend_history_{userId}_{DateTime.Now.Ticks}"
+                };
+
+                return JsonConvert.SerializeObject(request);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"創建好友歷史消息請求錯誤: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        ///     調用 get_group_msg_history API 獲取群組歷史消息
+        /// </summary>
+        /// <param name="groupId">群組ID</param>
+        /// <param name="count">獲取消息數量，默認20條</param>
+        /// <returns>API 請求的 JSON 字符串</returns>
+        public static string CreateGetGroupMsgHistoryRequest(long groupId, int count = 20)
+        {
+            try
+            {
+                var request = new
+                {
+                    action = "get_group_msg_history",
+                    @params = new
+                    {
+                        group_id = groupId, count
+                    },
+                    echo = $"group_history_{groupId}_{DateTime.Now.Ticks}"
+                };
+
+                return JsonConvert.SerializeObject(request);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"創建群組歷史消息請求錯誤: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        ///     處理歷史消息API響應
+        /// </summary>
+        /// <param name="responseJson">API響應JSON</param>
+        /// <param name="chatId">聊天ID</param>
+        /// <param name="isGroup">是否為群組</param>
+        /// <returns>解析後的聊天消息列表</returns>
+        public static List<ChatMessage> ProcessHistoryMessageResponse(string responseJson, long chatId, bool isGroup)
+        {
+            var messages = new List<ChatMessage>();
+
+            try
+            {
+                if (string.IsNullOrEmpty(responseJson))
+                {
+                    Debug.WriteLine("處理歷史消息響應: 響應為空");
+                    return messages;
+                }
+
+                var response = JsonConvert.DeserializeObject<JObject>(responseJson);
+                if (response == null)
+                {
+                    Debug.WriteLine("處理歷史消息響應: 無法解析響應JSON");
+                    return messages;
+                }
+
+                var data = response["data"];
+                if (data == null)
+                {
+                    Debug.WriteLine("處理歷史消息響應: 響應中沒有data字段");
+                    return messages;
+                }
+
+                var messageList = data["messages"] as JArray;
+                if (messageList == null)
+                {
+                    Debug.WriteLine("處理歷史消息響應: 響應中沒有messages陣列");
+                    return messages;
+                }
+
+                var currentUserId = GetCurrentUserId();
+
+                foreach (var msgToken in messageList)
+                    try
+                    {
+                        var messageObj = msgToken as JObject;
+                        if (messageObj == null) continue;
+
+                        var messageId = messageObj["message_id"]?.Value<long>() ?? 0;
+                        var senderId = messageObj["sender"]?["user_id"]?.Value<long>() ?? 0;
+                        var timestamp = messageObj["time"]?.Value<long>() ?? 0;
+                        var messageType = messageObj["message_type"]?.Value<string>() ?? "private";
+                        var rawMessage = messageObj["raw_message"]?.Value<string>() ?? "";
+
+                        // 處理發送者信息
+                        var senderInfo = messageObj["sender"] as JObject;
+                        var senderName = "";
+                        var isFromMe = senderId == currentUserId;
+
+                        if (isFromMe)
+                            senderName = "我";
+                        else if (isGroup && senderInfo != null)
+                            senderName = senderInfo["card"]?.Value<string>() ??
+                                         senderInfo["nickname"]?.Value<string>() ??
+                                         $"用戶 {senderId}";
+                        else
+                            senderName = GetFriendNameById(senderId);
+
+                        // 處理消息內容和段落
+                        var messageArray = messageObj["message"] as JArray;
+                        var segments = new List<MessageSegment>();
+
+                        if (messageArray != null)
+                            segments = MessageSegmentParser.ParseMessageArray(messageArray, isGroup ? chatId : 0);
+                        else if (!string.IsNullOrEmpty(rawMessage)) segments.Add(new TextSegment(rawMessage));
+
+                        // 創建聊天消息
+                        var chatMessage = new ChatMessage
+                        {
+                            Content = rawMessage,
+                            MessageType = messageType,
+                            SenderId = senderId,
+                            SenderName = senderName,
+                            IsFromMe = isFromMe,
+                            Timestamp = DateTimeOffset.FromUnixTimeSeconds(timestamp).DateTime,
+                            Segments = segments
+                        };
+
+                        messages.Add(chatMessage);
+                    }
+                    catch (Exception msgEx)
+                    {
+                        Debug.WriteLine($"處理單條歷史消息時發生錯誤: {msgEx.Message}");
+                    }
+
+                // 按時間順序排序
+                messages = messages.OrderBy(m => m.Timestamp).ToList();
+                Debug.WriteLine($"成功處理 {messages.Count} 條歷史消息");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"處理歷史消息響應錯誤: {ex.Message}");
+            }
+
+            return messages;
+        }
+
+        #endregion
+
         // 在 DataAccess.cs 文件的末尾添加以下方法
 
         #region 數據庫管理和統計
