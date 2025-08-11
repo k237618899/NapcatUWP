@@ -142,34 +142,37 @@ namespace NapcatUWP
             DataAccess.UpdateSetting("Account", TextBoxAccount.Text);
             DataAccess.UpdateSetting("Token", PasswordBoxToken.Password);
             SocketClientStarter.WebSocketConnet(ConnectionAddr, PasswordBoxToken.Password);
-            for (var i = 0; i < 30; i++)
+
+            // 减少等待时间，避免长时间卡住
+            for (var i = 0; i < 20; i++) // 从30秒减少到20秒
             {
                 await Task.Delay(1000);
                 if (SocketClientStarter.IsConnected)
                 {
+                    Progress_R.IsActive = false; // 确保关闭进度环
                     Frame.Navigate(typeof(MainView));
                     return;
                 }
             }
 
+            // 连接失败处理
+            Progress_R.IsActive = false;
             var dialog = new ContentDialog
             {
                 Title = "Connected Failed",
                 RequestedTheme = ElementTheme.Dark,
-                //FullSizeDesired = true,
-                MaxWidth = ActualWidth // Required for Mobile!
+                MaxWidth = ActualWidth
             };
-            var panel = new StackPanel();
 
+            var panel = new StackPanel();
             var textBlock = new TextBlock
             {
                 Text = "Connect to Server " + ConnectionAddr + " failed! Please check the connection and Token!"
             };
             panel.Children.Add(textBlock);
             dialog.Content = panel;
-            // Add Buttons
             dialog.PrimaryButtonText = "OK";
-            Progress_R.IsActive = false;
+
             await dialog.ShowAsync();
         }
     }

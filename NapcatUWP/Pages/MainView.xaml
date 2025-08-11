@@ -293,12 +293,21 @@
                                         </Grid.ColumnDefinitions>
 
                                         <!--  頭像  -->
-                                        <Ellipse
-                                            Width="48"
-                                            Height="48"
-                                            Margin="8"
-                                            VerticalAlignment="Center"
-                                            Fill="{Binding AvatarColor}" />
+                                        <Grid Width="48" Height="48" Margin="8" VerticalAlignment="Center">
+                                            <!-- 默认的头像颜色背景 -->
+                                            <Ellipse Fill="{Binding AvatarColor}" Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}" />
+
+                                            <!-- 真实头像图片 -->
+                                            <Ellipse Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                <Ellipse.Fill>
+                                                    <ImageBrush ImageSource="{Binding AvatarImage}" Stretch="UniformToFill"/>
+                                                </Ellipse.Fill>
+                                            </Ellipse>
+
+                                            <!-- 加载指示器 -->
+                                            <ProgressRing Width="20" Height="20" IsActive="{Binding IsLoadingAvatar}" 
+                                                          Foreground="White" Visibility="{Binding IsLoadingAvatar, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </Grid>
 
                                         <!--  中間內容區  -->
                                         <Grid
@@ -416,19 +425,24 @@
                                         </Grid.ColumnDefinitions>
 
                                         <!--  群組頭像  -->
-                                        <Border
-                                            Width="48"
-                                            Height="48"
-                                            Margin="8"
-                                            VerticalAlignment="Center"
-                                            Background="#FF50C878"
-                                            CornerRadius="8">
-                                            <FontIcon
-                                                FontFamily="Segoe MDL2 Assets"
-                                                FontSize="24"
-                                                Foreground="White"
-                                                Glyph="&#xE125;" />
-                                        </Border>
+                                        <Grid Width="48" Height="48" Margin="8" VerticalAlignment="Center">
+                                            <!-- 默认的群组图标背景 -->
+                                            <Border Background="#FF50C878" CornerRadius="8" 
+                                                    Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}">
+                                                <FontIcon FontFamily="Segoe MDL2 Assets" FontSize="24" Foreground="White" Glyph="&#xE125;" />
+                                            </Border>
+
+                                            <!-- 真实群组头像 -->
+                                            <Border CornerRadius="8" Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                <Border.Background>
+                                                    <ImageBrush ImageSource="{Binding AvatarImage}" Stretch="UniformToFill"/>
+                                                </Border.Background>
+                                            </Border>
+
+                                            <!-- 加载指示器 -->
+                                            <ProgressRing Width="20" Height="20" IsActive="{Binding IsLoadingAvatar}" 
+                                                          Foreground="White" Visibility="{Binding IsLoadingAvatar, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </Grid>
 
                                         <!--  群組信息  -->
                                         <Grid
@@ -620,6 +634,32 @@
                                                     <TextBlock
                                                         x:Name="TotalCategoriesText"
                                                         Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="頭像緩存: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="TotalAvatarsText"
+                                                        Text="0"
+                                                        Foreground="White"
+                                                        FontSize="14"
+                                                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                                                        Text="頭像大小: "
+                                                        Foreground="LightGray"
+                                                        FontSize="14" />
+                                                    <TextBlock
+                                                        x:Name="AvatarCacheSizeText"
+                                                        Text="0 B"
                                                         Foreground="White"
                                                         FontSize="14"
                                                         FontWeight="Bold" />

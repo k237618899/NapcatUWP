@@ -1,4 +1,8 @@
-﻿using System;
+﻿using NapcatUWP.Controls;
+using NapcatUWP.Models;
+using NapcatUWP.Tools;
+using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -16,11 +20,9 @@ using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
+using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
-using NapcatUWP.Controls;
-using NapcatUWP.Models;
-using NapcatUWP.Tools;
-using Newtonsoft.Json;
+using Windows.UI.Xaml.Shapes;
 
 namespace NapcatUWP.Pages
 {
@@ -28,14 +30,11 @@ namespace NapcatUWP.Pages
     {
         private const double SCROLL_TOLERANCE = 50.0; // 滾動容忍度（像素）
 
-        // 添加好友列表緩存字典
-        private readonly Dictionary<long, List<FriendInfo>> _categoryFriendsCache =
-            new Dictionary<long, List<FriendInfo>>();
-
-        private readonly ObservableCollection<ChatMessage> _currentMessages;
-        private readonly HashSet<string> _loadedHistoryChats;
-
-        private readonly Random _random = new Random();
+        // 修復：將 readonly 字段改為普通字段，在構造函數中初始化
+        private Dictionary<long, List<FriendInfo>> _categoryFriendsCache;
+        private ObservableCollection<ChatMessage> _currentMessages;
+        private HashSet<string> _loadedHistoryChats;
+        private Random _random;
 
         // 添加當前帳號追蹤
         private string _currentAccount = "";
@@ -52,57 +51,328 @@ namespace NapcatUWP.Pages
 
         private bool _sidebarOpen;
 
+        /// <summary>
+        /// 優化的初始化方法 - 修復 ChatItems 初始化問題
+        /// </summary>
         public MainView()
         {
             InitializeComponent();
-            InitializeAvatorAndInfo();
+
+            // 修復：確保所有集合都正確初始化
+            ChatItems = new ObservableCollection<ChatItem>();
+            GroupItems = new ObservableCollection<GroupInfo>();
+            ContactCategories = new ObservableCollection<FriendCategory>();
+
+            _categoryFriendsCache = new Dictionary<long, List<FriendInfo>>();
+            _currentMessages = new ObservableCollection<ChatMessage>();
+            _loadedHistoryChats = new HashSet<string>();
+            _random = new Random();
+
+            // 第1階段：基礎UI初始化（立即執行）
+            InitializeBaseUI();
+
+            // 第2階段：延遲載入數據（避免卡頓）
+            var _ = InitializeDataAsync();
+        }
+
+        /// <summary>
+        /// 基礎UI初始化（立即執行） - 修復版本
+        /// </summary>
+        private void InitializeBaseUI()
+        {
+            // 基礎UI設置
             SidebarColumn.Width = new GridLength(0);
             UpdateOverlay();
 
-            // 初始化數據庫統計信息
-            _databaseStatistics = new DatabaseStatistics();
-
-            // 檢查數據庫健康狀態
-            CheckDatabaseHealth();
-
             // 獲取當前帳號
             _currentAccount = DataAccess.GetCurrentAccount();
-            Debug.WriteLine($"當前帳號: {_currentAccount}");
 
-            // 先載入緩存的聊天列表
+            // 確保 ChatListView 綁定到 ChatItems
+            ChatListView.ItemsSource = ChatItems;
+
+            // 立即載入緩存的聊天列表（快速顯示內容）
             LoadCachedChatList();
 
             // 設置默認選中項
             ChatsItem.IsSelected = true;
 
-            // 設置 API 處理器的 MainView 引用
-            MainPage.SocketClientStarter.SetMainViewReference(this);
-
-            // 加載好友和群組數據
-            LoadContactsAndGroups();
-
-            // 初始化聊天消息集合
-            _currentMessages = new ObservableCollection<ChatMessage>();
+            // 初始化消息相關
             MessagesItemsControl.ItemsSource = _currentMessages;
-            _loadedHistoryChats = new HashSet<string>();
 
-            // 添加聊天列表點擊事件
+            // 註冊基礎事件
             ChatListView.SelectionChanged += ChatListView_SelectionChanged;
-
-            // 註冊應用程序關閉事件
-            RegisterApplicationEvents();
-
-            // 註冊系統返回鍵處理
-            RegisterBackButtonHandler();
-
-            // 改善：分階段執行後台修復任務，避免數據庫鎖定
-            StartBackgroundMaintenanceAsync();
-
-            RegisterScrollEventHandlers();
-
-            // 添加群組列表點擊事件
             GroupListView.ItemClick += GroupListView_ItemClick;
             GroupListView.IsItemClickEnabled = true;
+
+            // 註冊應用程序事件
+            RegisterApplicationEvents();
+            RegisterBackButtonHandler();
+            RegisterScrollEventHandlers();
+        }
+
+        /// <summary>
+        /// 优化的异步数据初始化 - 避免并发数据库访问
+        /// </summary>
+        private async Task InitializeDataAsync()
+        {
+            try
+            {
+                Debug.WriteLine("开始串行化数据初始化流程");
+
+                // 阶段1：基础初始化（同步执行）
+                await InitializeAvatarManagerAsync();
+                MainPage.SocketClientStarter.SetMainViewReference(this);
+
+                // 阶段2：数据库操作（串行化执行，避免并发锁定）
+                await Task.Delay(200);
+                await InitializeDatabaseDataAsync();
+
+                // 阶段3：UI更新（在UI线程执行）
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
+                    {
+                        MergeDuplicateChatItems();
+                        RefreshChatListContactInfo();
+                    });
+
+                // 阶段4：后台任务（延迟执行）
+                _ = Task.Delay(5000).ContinueWith(_ => StartBackgroundMaintenanceAsync());
+
+                Debug.WriteLine("数据初始化完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"数据初始化失败: {ex.Message}");
+                await HandleInitializationFailure(ex);
+            }
+        }
+
+        /// <summary>
+        /// 串行化数据库初始化，避免并发访问
+        /// </summary>
+        private async Task InitializeDatabaseDataAsync()
+        {
+            try
+            {
+                // 串行执行数据库操作
+                await Task.Run(() => LoadCachedChatList());
+                await Task.Delay(100);
+
+                await Task.Run(() => CheckDatabaseHealthAsync());
+                await Task.Delay(100);
+
+                // 延迟加载联系人和群组
+                _ = Task.Delay(2000).ContinueWith(_ => LoadContactsAndGroupsAsync());
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"数据库初始化失败: {ex.Message}");
+                throw;
+            }
+        }
+
+
+        /// <summary>
+        /// 异步数据库健康检查
+        /// </summary>
+        private async Task CheckDatabaseHealthAsync()
+        {
+            try
+            {
+                var isHealthy = await DatabaseManager.CheckDatabaseHealthAsync();
+                if (!isHealthy)
+                {
+                    Debug.WriteLine("数据库健康检查失败，可能需要重新初始化");
+                }
+                else
+                {
+                    Debug.WriteLine("数据库健康检查通过");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"数据库健康检查时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 異步載入最近消息（優先級最高）
+        /// </summary>
+        private async Task LoadRecentMessagesAsync()
+        {
+            try
+            {
+                Debug.WriteLine("開始優先載入最近消息");
+
+                if (string.IsNullOrEmpty(_currentAccount))
+                {
+                    Debug.WriteLine("當前帳號為空，跳過最近消息載入");
+                    return;
+                }
+
+                // 修復：使用正確的方法名稱，獲取最近的聊天消息作為 ChatMessage 類型
+                var recentChatMessages = await Task.Run(() => DataAccess.GetRecentChatMessages());
+
+                if (recentChatMessages.Count > 0)
+                {
+                    // 將 ChatMessage 轉換為 RecentContactMessage 格式或直接處理
+                    var recentContactMessages = ConvertChatMessagesToRecentContacts(recentChatMessages);
+
+                    // 立即更新UI以顯示最近的聊天
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                        CoreDispatcherPriority.High, () => { LoadRecentContactsToUI(recentContactMessages); });
+
+                    Debug.WriteLine($"優先載入最近消息完成: {recentContactMessages.Count} 條");
+                }
+                else
+                {
+                    Debug.WriteLine("沒有最近消息需要載入");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"載入最近消息時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 將 ChatMessage 轉換為 RecentContactMessage 格式（用於兼容性）
+        /// </summary>
+        /// <param name="chatMessages">聊天消息列表</param>
+        /// <returns>最近聯繫人消息列表</returns>
+        private List<RecentContactMessage> ConvertChatMessagesToRecentContacts(List<ChatMessage> chatMessages)
+        {
+            var recentMessages = new List<RecentContactMessage>();
+
+            try
+            {
+                var processedChats = new HashSet<string>(); // 用於避免重複
+
+                foreach (var message in chatMessages)
+                {
+                    // 從訊息推斷聊天類型和ID
+                    var isGroup = message.MessageType == "group";
+                    var chatId = isGroup ? message.SenderId : message.SenderId; // 這裡需要根據實際情況調整
+                    var chatKey = $"{chatId}_{isGroup}";
+
+                    if (processedChats.Contains(chatKey)) continue;
+
+                    var recentMessage = new RecentContactMessage
+                    {
+                        UserId = isGroup ? 0 : chatId,
+                        GroupId = isGroup ? chatId : 0,
+                        ChatType = isGroup ? 2 : 1, // 2為群組，1為私聊
+                        Time = ((DateTimeOffset)message.Timestamp).ToUnixTimeSeconds(),
+                        Message = message.Content,
+                        ParsedMessage = message.Content,
+                        SendNickName = message.SenderName,
+                        PeerName = message.SenderName,
+                        MessageSegments = message.Segments,
+                        ProcessedTimestamp = message.Timestamp
+                    };
+
+                    recentMessages.Add(recentMessage);
+                    processedChats.Add(chatKey);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"轉換聊天消息格式時發生錯誤: {ex.Message}");
+            }
+
+            return recentMessages;
+        }
+
+
+        /// <summary>
+        /// 异步加载联系人和群组数据（延迟执行）
+        /// </summary>
+        private async Task LoadContactsAndGroupsAsync()
+        {
+            try
+            {
+                Debug.WriteLine("开始延迟加载联系人和群组数据");
+
+                // 分别加载，避免同时访问数据库
+                var loadGroupsTask = LoadGroupsAsync();
+                var loadContactsTask = LoadContactsAsync();
+
+                // 等待两个任务完成，但不阻塞UI
+                await Task.WhenAll(loadGroupsTask, loadContactsTask);
+
+                Debug.WriteLine("联系人和群组数据加载完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"加载联系人和群组数据时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 初始化头像管理器
+        /// </summary>
+        private async Task InitializeAvatarManagerAsync()
+        {
+            try
+            {
+                await AvatarManager.InitializeAsync();
+                Debug.WriteLine("头像管理器初始化完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"初始化头像管理器失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 修复头像UI更新问题 - 订阅头像更新事件
+        /// </summary>
+        private void InitializeAvatarUpdates()
+        {
+            // 订阅头像更新事件
+            AvatarManager.OnAvatarUpdated += OnAvatarUpdated;
+        }
+
+        /// <summary>
+        /// 处理头像更新事件
+        /// </summary>
+        private async void OnAvatarUpdated(string cacheKey, BitmapImage image)
+        {
+            try
+            {
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
+                    {
+                        // 更新聊天列表中的头像
+                        foreach (var chatItem in ChatItems)
+                        {
+                            var itemCacheKey = $"{(chatItem.IsGroup ? "group" : "friend")}_{chatItem.ChatId}";
+                            if (itemCacheKey == cacheKey && chatItem.AvatarImage == null)
+                            {
+                                chatItem.AvatarImage = image;
+                                Debug.WriteLine($"头像UI更新成功: {cacheKey}");
+                            }
+                        }
+
+                        // 更新群组列表中的头像
+                        if (GroupItems != null)
+                        {
+                            foreach (var groupItem in GroupItems)
+                            {
+                                var itemCacheKey = $"group_{groupItem.GroupId}";
+                                if (itemCacheKey == cacheKey && groupItem.AvatarImage == null)
+                                {
+                                    groupItem.AvatarImage = image;
+                                    Debug.WriteLine($"群组头像UI更新成功: {cacheKey}");
+                                }
+                            }
+                        }
+                    });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"处理头像更新事件时发生错误: {ex.Message}");
+            }
         }
 
         public ObservableCollection<ChatItem> ChatItems { get; set; }
@@ -117,7 +387,7 @@ namespace NapcatUWP.Pages
         {
             try
             {
-                // 延遲3秒後開始，讓界面先完全加載
+                // 延遲3秒後開始，讓界面先完全載入
                 await Task.Delay(3000);
 
                 Debug.WriteLine("開始分階段後台維護任務");
@@ -185,7 +455,7 @@ namespace NapcatUWP.Pages
             }
         }
 
-        // 新增數據庫健康檢查方法
+        // 修復：新增數據庫健康檢查方法
         private async void CheckDatabaseHealth()
         {
             try
@@ -203,47 +473,48 @@ namespace NapcatUWP.Pages
             }
         }
 
-        // 更新测试方法
+        // 更新測試方法
         private void TestVideoPlayer()
         {
             try
             {
-                Debug.WriteLine("MainView: 开始测试视频播放器");
-                Debug.WriteLine($"MainView: VideoPlayerOverlay 是否为 null: {VideoPlayerOverlay == null}");
+                Debug.WriteLine("MainView: 開始測試視頻播放器");
+                Debug.WriteLine($"MainView: VideoPlayerOverlay 是否為 null: {VideoPlayerOverlay == null}");
                 Debug.WriteLine(
-                    $"MainView: VideoPlayerOverlayContainer 是否为 null: {VideoPlayerOverlayContainer == null}");
+                    $"MainView: VideoPlayerOverlayContainer 是否為 null: {VideoPlayerOverlayContainer == null}");
 
                 if (VideoPlayerOverlay != null && VideoPlayerOverlayContainer != null)
                 {
                     Debug.WriteLine(
-                        $"MainView: VideoPlayerOverlayContainer 类型: {VideoPlayerOverlayContainer.GetType().Name}");
+                        $"MainView: VideoPlayerOverlayContainer 類型: {VideoPlayerOverlayContainer.GetType().Name}");
                     Debug.WriteLine(
-                        $"MainView: VideoPlayerOverlayContainer 当前可见性: {VideoPlayerOverlayContainer.Visibility}");
+                        $"MainView: VideoPlayerOverlayContainer 當前可見性: {VideoPlayerOverlayContainer.Visibility}");
 
-                    // 测试显示视频播放器
+                    // 測試顯示視頻播放器
                     VideoPlayerOverlayContainer.Visibility = Visibility.Visible;
-                    Debug.WriteLine($"MainView: 设置后的可见性: {VideoPlayerOverlayContainer.Visibility}");
+                    Debug.WriteLine($"MainView: 設置後的可見性: {VideoPlayerOverlayContainer.Visibility}");
 
-                    // 延迟一秒后隐藏
+                    // 延遲一秒後隱藏
                     Task.Delay(2000).ContinueWith(_ =>
                     {
                         CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
                         {
                             VideoPlayerOverlayContainer.Visibility = Visibility.Collapsed;
-                            Debug.WriteLine("MainView: 测试完成，隐藏视频播放器");
+                            Debug.WriteLine("MainView: 測試完成，隱藏視頻播放器");
                         });
                     });
                 }
                 else
                 {
-                    Debug.WriteLine("MainView: VideoPlayerOverlay 或 VideoPlayerOverlayContainer 为 null！");
+                    Debug.WriteLine("MainView: VideoPlayerOverlay 或 VideoPlayerOverlayContainer 為 null！");
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"MainView: 测试视频播放器时发生错误: {ex.Message}");
+                Debug.WriteLine($"MainView: 測試視頻播放器時發生錯誤: {ex.Message}");
             }
         }
+
 
         /// <summary>
         ///     处理消息段控件的视频播放请求
@@ -538,21 +809,25 @@ namespace NapcatUWP.Pages
         }
 
         /// <summary>
-        ///     頁面離開時調用
+        /// 页面卸载时清理资源
         /// </summary>
         protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
             base.OnNavigatedFrom(e);
 
-            // 取消註冊返回鍵處理程序
             try
             {
+                // 取消订阅头像更新事件
+                AvatarManager.OnAvatarUpdated -= OnAvatarUpdated;
+
+                // 取消注册返回键处理程序
                 SystemNavigationManager.GetForCurrentView().BackRequested -= OnBackRequested;
-                Debug.WriteLine("系統返回鍵事件處理已取消註冊");
+
+                Debug.WriteLine("页面资源清理完成");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"取消註冊系統返回鍵處理時發生錯誤: {ex.Message}");
+                Debug.WriteLine($"页面资源清理时发生错误: {ex.Message}");
             }
         }
 
@@ -637,34 +912,243 @@ namespace NapcatUWP.Pages
         }
 
         /// <summary>
-        ///     載入緩存的聊天列表
+        /// 修复跨线程访问 - 安全的聊天列表缓存加载
         /// </summary>
-        private void LoadCachedChatList()
+        private async void LoadCachedChatList()
         {
             try
             {
-                ChatItems = new ObservableCollection<ChatItem>();
-
-                if (!string.IsNullOrEmpty(_currentAccount))
+                // 确保 ChatItems 已初始化
+                if (ChatItems == null)
                 {
-                    var cachedItems = DataAccess.LoadChatListCache(_currentAccount);
+                    ChatItems = new ObservableCollection<ChatItem>();
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                        CoreDispatcherPriority.Normal, () =>
+                        {
+                            if (ChatListView != null)
+                            {
+                                ChatListView.ItemsSource = ChatItems;
+                            }
+                        });
+                }
 
-                    foreach (var item in cachedItems) ChatItems.Add(item);
+                if (string.IsNullOrEmpty(_currentAccount))
+                {
+                    Debug.WriteLine("载入缓存聊天列表: 当前账号为空");
+                    return;
+                }
 
-                    Debug.WriteLine($"載入緩存聊天列表: {cachedItems.Count} 個項目");
+                // 在后台线程加载缓存数据
+                var cachedChats = await Task.Run(() =>
+                {
+                    try
+                    {
+                        return DataAccess.LoadChatListCache(_currentAccount);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"加载聊天列表缓存失败: {ex.Message}");
+                        return new List<ChatItem>();
+                    }
+                });
+
+                if (cachedChats != null && cachedChats.Count > 0)
+                {
+                    Debug.WriteLine($"载入缓存聊天列表: {cachedChats.Count} 个项目");
+
+                    // 在UI线程中更新界面
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                        CoreDispatcherPriority.Normal, () =>
+                        {
+                            try
+                            {
+                                ChatItems.Clear();
+
+                                // 修复群组名称并添加到列表
+                                foreach (var chatItem in cachedChats)
+                                {
+                                    if (chatItem != null)
+                                    {
+                                        // 对于群组，确保使用正确的名称
+                                        if (chatItem.IsGroup)
+                                        {
+                                            var actualGroupName = DataAccess.GetGroupNameById(chatItem.ChatId);
+                                            if (!string.IsNullOrEmpty(actualGroupName) &&
+                                                !actualGroupName.StartsWith("群組 "))
+                                            {
+                                                chatItem.Name = actualGroupName;
+                                                Debug.WriteLine($"修复群组名称: {chatItem.ChatId} -> {actualGroupName}");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // 对于好友，也检查是否需要更新名称
+                                            var actualFriendName = DataAccess.GetFriendNameById(chatItem.ChatId);
+                                            if (!actualFriendName.StartsWith("用戶 "))
+                                            {
+                                                chatItem.Name = actualFriendName;
+                                            }
+                                        }
+
+                                        ChatItems.Add(chatItem);
+                                    }
+                                }
+
+                                Debug.WriteLine($"缓存聊天列表载入完成: {ChatItems.Count} 个项目");
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"UI更新时发生错误: {ex.Message}");
+                            }
+                        });
+
+                    // 启动分批头像载入
+                    _ = Task.Delay(1000).ContinueWith(_ => LoadAvatarsBatch());
                 }
                 else
                 {
-                    Debug.WriteLine("沒有當前帳號，初始化空聊天列表");
+                    Debug.WriteLine("没有找到缓存的聊天列表");
                 }
-
-                ChatListView.ItemsSource = ChatItems;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"載入緩存聊天列表錯誤: {ex.Message}");
-                ChatItems = new ObservableCollection<ChatItem>();
-                ChatListView.ItemsSource = ChatItems;
+                Debug.WriteLine($"载入缓存聊天列表错误: {ex.Message}");
+
+                // 确保在UI线程中处理异常
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Normal, () =>
+                    {
+                        // 确保 ChatItems 至少被初始化
+                        if (ChatItems == null)
+                        {
+                            ChatItems = new ObservableCollection<ChatItem>();
+                            if (ChatListView != null)
+                            {
+                                ChatListView.ItemsSource = ChatItems;
+                            }
+                        }
+                    });
+            }
+        }
+
+        /// <summary>
+        /// 修复集合索引异常 - 确保安全的集合操作
+        /// </summary>
+        private void MergeDuplicateChatItems()
+        {
+            try
+            {
+                if (ChatItems == null || ChatItems.Count == 0) return;
+
+                Debug.WriteLine($"开始合并重复聊天项目，当前项目数: {ChatItems.Count}");
+
+                // 使用安全的方式处理集合，避免索引超出范围
+                var itemsToProcess = new List<ChatItem>();
+
+                // 安全复制集合到临时列表
+                foreach (var item in ChatItems)
+                {
+                    if (item != null)
+                    {
+                        itemsToProcess.Add(item);
+                    }
+                }
+
+                var itemsToRemove = new List<ChatItem>();
+                var processedItems = new Dictionary<string, ChatItem>(); // key: "chatId_isGroup"
+
+                foreach (var item in itemsToProcess)
+                {
+                    if (item == null) continue;
+
+                    var key = $"{item.ChatId}_{item.IsGroup}";
+
+                    if (processedItems.ContainsKey(key))
+                    {
+                        // 发现重复项目，保留更新时间较新的
+                        var existingItem = processedItems[key];
+                        var currentItemTime = DateTime.TryParse(item.LastTime, out var currentTime)
+                            ? currentTime
+                            : DateTime.MinValue;
+                        var existingItemTime = DateTime.TryParse(existingItem.LastTime, out var existingTime)
+                            ? existingTime
+                            : DateTime.MinValue;
+
+                        if (currentItemTime > existingItemTime)
+                        {
+                            // 当前项目更新，移除旧项目
+                            if (ChatItems.Contains(existingItem))
+                            {
+                                itemsToRemove.Add(existingItem);
+                            }
+
+                            processedItems[key] = item;
+                            Debug.WriteLine($"合并重复聊天，保留较新项目: {item.Name} (ID: {item.ChatId})");
+                        }
+                        else
+                        {
+                            // 保留现有项目，移除当前项目
+                            if (ChatItems.Contains(item))
+                            {
+                                itemsToRemove.Add(item);
+                            }
+
+                            Debug.WriteLine($"合并重复聊天，移除较旧项目: {item.Name} (ID: {item.ChatId})");
+                        }
+                    }
+                    else
+                    {
+                        processedItems[key] = item;
+                    }
+                }
+
+                // 安全移除重复项目
+                foreach (var itemToRemove in itemsToRemove)
+                {
+                    if (ChatItems.Contains(itemToRemove))
+                    {
+                        ChatItems.Remove(itemToRemove);
+                    }
+                }
+
+                if (itemsToRemove.Count > 0)
+                {
+                    Debug.WriteLine($"合并完成，移除了 {itemsToRemove.Count} 个重复项目，剩余 {ChatItems.Count} 个项目");
+
+                    // 保存更新后的聊天列表
+                    _ = Task.Run(SaveChatListCacheAsync);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"合并重复聊天项目时发生错误: {ex.Message}");
+
+                // 如果出现异常，尝试重新初始化ChatItems
+                if (ChatItems == null)
+                {
+                    ChatItems = new ObservableCollection<ChatItem>();
+                    if (ChatListView != null)
+                    {
+                        ChatListView.ItemsSource = ChatItems;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 预加载聊天列表头像
+        /// </summary>
+        private async Task PreloadChatListAvatarsAsync(IEnumerable<ChatItem> chatItems)
+        {
+            try
+            {
+                // 延迟一小段时间让UI先加载完成
+                await Task.Delay(500);
+                await DataAccess.PreloadChatListAvatarsAsync(chatItems);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"预加载聊天列表头像失败: {ex.Message}");
             }
         }
 
@@ -698,10 +1182,34 @@ namespace NapcatUWP.Pages
         /// <summary>
         ///     應用程序掛起時保存聊天列表
         /// </summary>
-        private void OnApplicationSuspending(object sender, SuspendingEventArgs e)
+        private async void OnApplicationSuspending(object sender, SuspendingEventArgs e)
         {
-            Debug.WriteLine("應用程序掛起，保存聊天列表緩存");
-            SaveChatListCache();
+            var deferral = e.SuspendingOperation.GetDeferral();
+
+            try
+            {
+                Debug.WriteLine("應用程序掛起，保存聊天列表緩存");
+                SaveChatListCache();
+
+                // 清理过期的头像缓存
+                try
+                {
+                    await AvatarManager.CleanExpiredCacheAsync();
+                    Debug.WriteLine("头像缓存清理完成");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"清理头像缓存时发生错误: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"应用程序挂起处理时发生错误: {ex.Message}");
+            }
+            finally
+            {
+                deferral.Complete();
+            }
         }
 
         /// <summary>
@@ -735,8 +1243,9 @@ namespace NapcatUWP.Pages
             }
         }
 
+
         /// <summary>
-        ///     將最近聯繫人載入到UI
+        ///     將最近聯繫人載入到UI（優化版）
         /// </summary>
         public void LoadRecentContactsToUI(List<RecentContactMessage> recentMessages)
         {
@@ -764,11 +1273,27 @@ namespace NapcatUWP.Pages
                         // 移動到列表頂部
                         ChatItems.Remove(existingChat);
                         ChatItems.Insert(0, existingChat);
+
+                        // 收到新消息時刷新頭像（中優先級）
+                        if (!existingChat.HasAvatar)
+                        {
+                            existingChat.LoadAvatarAsync(priority: 1, useCache: false);
+                        }
                     }
                     else
                     {
-                        // 添加新的聊天項目
+                        // 添加新的聊天項目，先從緩存載入頭像
+                        newItem.LoadAvatarFromCacheAsync();
                         ChatItems.Insert(0, newItem);
+
+                        // 延遲啟動網路下載（低優先級）
+                        _ = Task.Delay(2000).ContinueWith(_ =>
+                        {
+                            if (!newItem.HasAvatar)
+                            {
+                                newItem.LoadAvatarAsync(priority: 2, useCache: false);
+                            }
+                        });
                     }
                 }
 
@@ -783,16 +1308,41 @@ namespace NapcatUWP.Pages
             }
         }
 
+        /// <summary>
+        /// 预加载新增聊天项目的头像
+        /// </summary>
+        private async Task PreloadNewChatAvatarsAsync(IEnumerable<ChatItem> newChatItems)
+        {
+            try
+            {
+                await Task.Delay(200); // 短暂延迟
+                await DataAccess.PreloadChatListAvatarsAsync(newChatItems);
+                Debug.WriteLine("新增聊天项目头像预加载完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"预加载新增聊天头像失败: {ex.Message}");
+            }
+        }
+
         // 添加聊天列表選擇事件處理
         private void ChatListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (e.AddedItems.Count > 0 && e.AddedItems[0] is ChatItem selectedChat) OpenChat(selectedChat);
         }
 
-        // 修改 OpenChat 方法以支持首次載入歷史消息
+        /// <summary>
+        /// 当进入聊天时触发头像刷新（高优先级）
+        /// </summary>
         private void OpenChat(ChatItem chatItem)
         {
             _currentChat = chatItem;
+
+            // 高优先级刷新当前聊天的头像
+            if (!chatItem.HasAvatar)
+            {
+                chatItem.LoadAvatarAsync(priority: 0, useCache: false);
+            }
 
             // 設置聊天標題
             if (chatItem.IsGroup)
@@ -1162,52 +1712,57 @@ namespace NapcatUWP.Pages
 
 
         /// <summary>
-        ///     更新聊天列表中的群组信息
+        /// 更新群組信息到聊天列表 - 確保群組名稱正確顯示
         /// </summary>
         public void UpdateGroupInfoInChatList()
         {
             try
             {
-                var allGroups = DataAccess.GetAllGroups();
-                var hasUpdates = false;
+                var groupsUpdated = 0;
 
-                foreach (var chatItem in ChatItems.ToList())
-                    if (chatItem.IsGroup)
+                foreach (var chatItem in ChatItems.Where(c => c.IsGroup).ToList())
+                {
+                    var actualGroupName = DataAccess.GetGroupNameById(chatItem.ChatId);
+
+                    // 如果從數據庫獲得了更好的群組名稱，更新它
+                    if (!string.IsNullOrEmpty(actualGroupName) &&
+                        !actualGroupName.StartsWith("群組 ") &&
+                        actualGroupName != chatItem.Name)
                     {
-                        var group = allGroups.FirstOrDefault(g => g.GroupId == chatItem.ChatId);
-                        if (group != null)
+                        Debug.WriteLine($"更新群組名稱: {chatItem.ChatId} - {chatItem.Name} -> {actualGroupName}");
+                        chatItem.Name = actualGroupName;
+                        groupsUpdated++;
+
+                        // 同時更新群組信息
+                        var groupInfo = DataAccess.GetGroupInfo(chatItem.ChatId);
+                        if (groupInfo != null)
                         {
-                            // 检查群组名是否需要更新
-                            var newGroupName = !string.IsNullOrEmpty(group.GroupRemark)
-                                ? group.GroupRemark
-                                : group.GroupName;
-
-                            if (chatItem.Name != newGroupName)
-                            {
-                                Debug.WriteLine($"更新群组名: {chatItem.Name} -> {newGroupName}");
-                                chatItem.Name = newGroupName;
-                                hasUpdates = true;
-                            }
-
-                            // 更新成员数量
-                            if (chatItem.MemberCount != group.MemberCount)
-                            {
-                                Debug.WriteLine($"更新群组成员数: {chatItem.MemberCount} -> {group.MemberCount}");
-                                chatItem.MemberCount = group.MemberCount;
-                                hasUpdates = true;
-                            }
+                            chatItem.MemberCount = groupInfo.MemberCount;
                         }
                     }
+                }
 
-                if (hasUpdates)
+                if (groupsUpdated > 0)
                 {
-                    Debug.WriteLine("群组信息已更新，保存聊天列表缓存");
-                    SaveChatListCache();
+                    Debug.WriteLine($"群組信息更新完成: 更新了 {groupsUpdated} 個群組");
+
+                    // 異步保存更新後的聊天列表
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await SaveChatListCacheAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"保存更新後聊天列表失敗: {ex.Message}");
+                        }
+                    });
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"更新群组信息时发生错误: {ex.Message}");
+                Debug.WriteLine($"更新群組信息錯誤: {ex.Message}");
             }
         }
 
@@ -1462,53 +2017,76 @@ namespace NapcatUWP.Pages
         }
 
         /// <summary>
-        ///     安全保存聊天列表緩存 - 避免並發衝突
+        /// 线程安全的聊天列表缓存保存
         /// </summary>
         private async Task SaveChatListCacheAsync()
         {
             try
             {
-                if (!string.IsNullOrEmpty(_currentAccount) && ChatItems != null && ChatItems.Count > 0)
-                    // 使用後台線程保存，避免阻塞UI
+                if (string.IsNullOrEmpty(_currentAccount) || ChatItems == null)
+                    return;
+
+                // 防止并发访问
+                var saveSemaphore = new System.Threading.SemaphoreSlim(1, 1);
+                await saveSemaphore.WaitAsync();
+
+                try
+                {
                     await Task.Run(async () =>
                     {
                         try
                         {
-                            // 創建聊天列表的副本以避免集合修改異常
                             var chatItemsCopy = new List<ChatItem>();
 
+                            // 安全地复制聊天项目到临时列表
                             await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
                                 CoreDispatcherPriority.Normal, () =>
                                 {
-                                    foreach (var item in ChatItems)
-                                        chatItemsCopy.Add(new ChatItem
+                                    if (ChatItems != null)
+                                    {
+                                        foreach (var item in ChatItems)
                                         {
-                                            ChatId = item.ChatId,
-                                            Name = item.Name,
-                                            LastMessage = item.LastMessage,
-                                            LastTime = item.LastTime,
-                                            UnreadCount = item.UnreadCount,
-                                            AvatarColor = item.AvatarColor,
-                                            IsGroup = item.IsGroup,
-                                            MemberCount = item.MemberCount
-                                        });
+                                            if (item != null)
+                                            {
+                                                chatItemsCopy.Add(new ChatItem
+                                                {
+                                                    ChatId = item.ChatId,
+                                                    Name = item.Name,
+                                                    LastMessage = item.LastMessage,
+                                                    LastTime = item.LastTime,
+                                                    UnreadCount = item.UnreadCount,
+                                                    AvatarColor = item.AvatarColor,
+                                                    IsGroup = item.IsGroup,
+                                                    MemberCount = item.MemberCount
+                                                });
+                                            }
+                                        }
+                                    }
                                 });
 
-                            DataAccess.SaveChatListCache(_currentAccount, chatItemsCopy);
-                            Debug.WriteLine($"安全保存聊天列表緩存: {chatItemsCopy.Count} 個項目");
+                            if (chatItemsCopy.Count > 0)
+                            {
+                                // 使用智能保存，避免不必要的删除
+                                DataAccess.SaveChatListCacheSmart(_currentAccount, chatItemsCopy);
+                                Debug.WriteLine($"线程安全保存聊天列表缓存: {chatItemsCopy.Count} 个项目");
+                            }
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"後台保存聊天列表緩存錯誤: {ex.Message}");
+                            Debug.WriteLine($"后台保存聊天列表缓存错误: {ex.Message}");
                         }
                     });
+                }
+                finally
+                {
+                    saveSemaphore.Release();
+                }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"保存聊天列表緩存錯誤: {ex.Message}");
+                Debug.WriteLine($"线程安全保存聊天列表缓存错误: {ex.Message}");
             }
         }
-
 
         /// <summary>
         ///     <summary>
@@ -1745,7 +2323,7 @@ namespace NapcatUWP.Pages
         }
 
         /// <summary>
-        ///     異步加載群組數據 - 修正為 C# 7.0 兼容版本
+        ///     異步加載群組數據 - 延迟加载头像版本
         /// </summary>
         private async Task LoadGroupsAsync()
         {
@@ -1761,10 +2339,43 @@ namespace NapcatUWP.Pages
                         GroupListView.ItemsSource = GroupItems;
                         Debug.WriteLine($"群組數據加載完成: {groups.Count} 個群組");
                     });
+
+                // 延迟启动群组头像加载（仅在用户切换到群组页面时）
+                if (_currentPage == "Groups")
+                {
+                    _ = LoadGroupAvatarsAsync(groups);
+                }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"加載群組數據時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 异步加载群组头像（延迟加载）
+        /// </summary>
+        private async Task LoadGroupAvatarsAsync(List<GroupInfo> groups)
+        {
+            try
+            {
+                await Task.Delay(500); // 短暂延迟让UI先渲染
+
+                foreach (var group in groups)
+                {
+                    if (_currentPage != "Groups") break; // 如果用户已切换页面，停止加载
+
+                    group.LoadAvatarAsync();
+
+                    // 分批加载，避免一次性请求过多
+                    await Task.Delay(100);
+                }
+
+                Debug.WriteLine("群组头像延迟加载完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"加载群组头像时发生错误: {ex.Message}");
             }
         }
 
@@ -2260,6 +2871,9 @@ namespace NapcatUWP.Pages
             }
         }
 
+        /// <summary>
+        /// 安全的好友项目创建 - 避免控件引用导致的崩溃
+        /// </summary>
         private Grid CreateFriendItem(FriendInfo friend)
         {
             var grid = new Grid
@@ -2267,23 +2881,28 @@ namespace NapcatUWP.Pages
                 Height = 60,
                 Margin = new Thickness(0, 0, 0, 1),
                 Background = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
-                Tag = friend // 保存好友信息
+                Tag = friend
             };
 
-            // 添加點擊事件
+            // 使用弱引用的方式添加点击事件，避免内存泄漏
             grid.Tapped += OnFriendItemTapped;
 
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // 頭像
-            var avatar = new Border
+            // 创建头像容器
+            var avatarContainer = new Grid
             {
                 Width = 40,
                 Height = 40,
                 Margin = new Thickness(10),
-                VerticalAlignment = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // 默认头像背景
+            var defaultAvatar = new Border
+            {
                 Background = new SolidColorBrush(Color.FromArgb(255, 76, 144, 226)),
                 CornerRadius = new CornerRadius(20)
             };
@@ -2298,10 +2917,38 @@ namespace NapcatUWP.Pages
                 VerticalAlignment = VerticalAlignment.Center
             };
 
-            avatar.Child = avatarIcon;
-            Grid.SetColumn(avatar, 0);
-            grid.Children.Add(avatar);
+            defaultAvatar.Child = avatarIcon;
+            avatarContainer.Children.Add(defaultAvatar);
 
+            // 创建真实头像的椭圆（初始隐藏）
+            var realAvatarEllipse = new Ellipse
+            {
+                Visibility = Visibility.Collapsed
+            };
+            avatarContainer.Children.Add(realAvatarEllipse);
+
+            // 加载指示器
+            var loadingRing = new ProgressRing
+            {
+                Width = 20,
+                Height = 20,
+                Foreground = new SolidColorBrush(Colors.White),
+                Visibility = Visibility.Collapsed
+            };
+            avatarContainer.Children.Add(loadingRing);
+
+            Grid.SetColumn(avatarContainer, 0);
+            grid.Children.Add(avatarContainer);
+
+            // 延迟启动头像加载，避免一次性加载过多
+            _ = Task.Delay(200).ContinueWith(async _ =>
+            {
+                // 检查是否仍在联系人页面
+                if (_currentPage == "Contacts")
+                {
+                    LoadFriendAvatarAsync(friend, defaultAvatar, realAvatarEllipse, loadingRing);
+                }
+            });
             // 好友信息
             var infoPanel = new StackPanel
             {
@@ -2320,7 +2967,6 @@ namespace NapcatUWP.Pages
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
 
-            // 修改狀態文字：顯示 QQ號 而不是等級
             var statusText = new TextBlock
             {
                 Text = $"QQ號：{friend.UserId}",
@@ -2335,6 +2981,134 @@ namespace NapcatUWP.Pages
             grid.Children.Add(infoPanel);
 
             return grid;
+        }
+
+        /// <summary>
+        /// 優化的聯繫人頭像載入 - 延遲載入，避免卡頓
+        /// </summary>
+        private async void LoadFriendAvatarAsync(FriendInfo friend, Border defaultAvatar, Ellipse realAvatarEllipse,
+            ProgressRing loadingRing)
+        {
+            try
+            {
+                // 檢查是否仍在聯繫人頁面且控件仍然有效
+                if (_currentPage != "Contacts" || defaultAvatar == null || realAvatarEllipse == null ||
+                    loadingRing == null)
+                {
+                    return;
+                }
+
+                // 使用安全的UI更新方式，顯示載入狀態
+                await SafeDispatcherRunAsync(CoreDispatcherPriority.Low, () =>
+                {
+                    if (loadingRing != null)
+                    {
+                        loadingRing.IsActive = true;
+                        loadingRing.Visibility = Visibility.Visible;
+                    }
+                });
+
+                // 先嘗試從緩存載入
+                var avatarTask = AvatarManager.GetAvatarAsync("friend", friend.UserId, priority: 2, useCache: true);
+                var timeoutTask = Task.Delay(5000); // 5秒超時
+
+                var completedTask = await Task.WhenAny(avatarTask, timeoutTask);
+                BitmapImage avatarImage = null;
+
+                if (completedTask == avatarTask)
+                {
+                    avatarImage = await avatarTask;
+                    Debug.WriteLine(
+                        $"好友頭像緩存載入: {friend.Nickname ?? friend.Nick} - {(avatarImage != null ? "成功" : "失敗")}");
+                }
+                else
+                {
+                    Debug.WriteLine($"好友頭像載入超時: {friend.Nickname ?? friend.Nick}");
+                }
+
+                // 檢查控件是否仍然有效
+                if (_currentPage != "Contacts" || defaultAvatar == null || realAvatarEllipse == null)
+                {
+                    return;
+                }
+
+                await SafeDispatcherRunAsync(CoreDispatcherPriority.Normal, () =>
+                {
+                    try
+                    {
+                        if (avatarImage != null && realAvatarEllipse != null && defaultAvatar != null)
+                        {
+                            // 設置真實頭像
+                            realAvatarEllipse.Fill = new ImageBrush
+                            {
+                                ImageSource = avatarImage,
+                                Stretch = Stretch.UniformToFill
+                            };
+
+                            // 顯示真實頭像，隱藏默認頭像
+                            realAvatarEllipse.Visibility = Visibility.Visible;
+                            defaultAvatar.Visibility = Visibility.Collapsed;
+
+                            Debug.WriteLine($"好友頭像UI更新成功: {friend.Nickname ?? friend.Nick}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"設置好友頭像UI時發生錯誤: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"載入好友頭像失敗: {ex.Message}");
+            }
+            finally
+            {
+                // 確保隱藏載入指示器
+                try
+                {
+                    await SafeDispatcherRunAsync(CoreDispatcherPriority.Low, () =>
+                    {
+                        if (loadingRing != null)
+                        {
+                            loadingRing.IsActive = false;
+                            loadingRing.Visibility = Visibility.Collapsed;
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"隱藏載入指示器時發生錯誤: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 安全的调度器执行方法 - 避免调度器异常导致崩溃
+        /// </summary>
+        private async Task SafeDispatcherRunAsync(CoreDispatcherPriority priority, Action action)
+        {
+            try
+            {
+                if (CoreApplication.MainView?.CoreWindow?.Dispatcher != null)
+                {
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(priority, () =>
+                    {
+                        try
+                        {
+                            action?.Invoke();
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"调度器内部执行错误: {ex.Message}");
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"调度器执行错误: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -2464,25 +3238,63 @@ namespace NapcatUWP.Pages
         }
 
         /// <summary>
-        ///     刷新聊天列表 - 公共方法供外部調用
+        /// 修復版 RefreshChatList - 確保群組名稱正確顯示
         /// </summary>
         public void RefreshChatList()
         {
             try
             {
-                Debug.WriteLine("刷新聊天列表");
+                if (string.IsNullOrEmpty(_currentAccount))
+                {
+                    Debug.WriteLine("刷新聊天列表: 當前帳號為空");
+                    return;
+                }
 
-                // 重新加載緩存的聊天列表
-                LoadCachedChatList();
+                // 載入緩存的聊天列表
+                var cachedChats = DataAccess.LoadChatListCache(_currentAccount);
 
-                // 觸發UI更新
-                ChatListView.ItemsSource = ChatItems;
+                Debug.WriteLine($"從緩存載入聊天列表: {cachedChats.Count} 個項目");
 
-                Debug.WriteLine($"聊天列表刷新完成，共 {ChatItems.Count} 個項目");
+                // 清空當前列表
+                ChatItems.Clear();
+
+                // 修復名稱並添加所有緩存的聊天到列表
+                foreach (var chatItem in cachedChats)
+                {
+                    // 對於群組，確保名稱正確
+                    if (chatItem.IsGroup)
+                    {
+                        var actualGroupName = DataAccess.GetGroupNameById(chatItem.ChatId);
+                        if (!string.IsNullOrEmpty(actualGroupName) && !actualGroupName.StartsWith("群組 "))
+                        {
+                            chatItem.Name = actualGroupName;
+                            Debug.WriteLine($"刷新時更新群組名稱: {chatItem.ChatId} -> {actualGroupName}");
+                        }
+                    }
+                    else
+                    {
+                        // 對於好友，也檢查名稱
+                        var actualFriendName = DataAccess.GetFriendNameById(chatItem.ChatId);
+                        if (!actualFriendName.StartsWith("用戶 "))
+                        {
+                            chatItem.Name = actualFriendName;
+                        }
+                    }
+
+                    ChatItems.Add(chatItem);
+
+                    // 從緩存載入頭像（不會導致網路請求）
+                    chatItem.LoadAvatarFromCacheAsync();
+                }
+
+                // 合并重複項目
+                MergeDuplicateChatItems();
+
+                Debug.WriteLine($"聊天列表刷新完成: {ChatItems.Count} 個聊天項目");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"刷新聊天列表時發生錯誤: {ex.Message}");
+                Debug.WriteLine($"刷新聊天列表錯誤: {ex.Message}");
             }
         }
 
@@ -2494,7 +3306,7 @@ namespace NapcatUWP.Pages
             ChatListView.Visibility = Visibility.Collapsed;
             ContactsScrollViewer.Visibility = Visibility.Collapsed;
             GroupListView.Visibility = Visibility.Collapsed;
-            SettingsScrollViewer.Visibility = Visibility.Collapsed; // 修改這行
+            SettingsScrollViewer.Visibility = Visibility.Collapsed;
 
             // 更新搜索框提示文字
             switch (pageName)
@@ -2508,13 +3320,17 @@ namespace NapcatUWP.Pages
                 case "Contacts":
                     ContactsScrollViewer.Visibility = Visibility.Visible;
                     SearchTextBox.PlaceholderText = "Search (Contacts)";
+                    // 进入联系人页面时启动头像加载
+                    _ = StartContactAvatarLoadingAsync();
                     break;
                 case "Groups":
                     GroupListView.Visibility = Visibility.Visible;
                     SearchTextBox.PlaceholderText = "Search (Groups)";
+                    // 进入群组页面时启动头像加载
+                    _ = StartGroupAvatarLoadingAsync();
                     break;
                 case "Settings":
-                    SettingsScrollViewer.Visibility = Visibility.Visible; // 修改這行
+                    SettingsScrollViewer.Visibility = Visibility.Visible;
                     SearchTextBox.PlaceholderText = "Search (Settings)";
                     // 加載設定頁面時刷新統計信息
                     LoadSettingsPage();
@@ -2523,6 +3339,92 @@ namespace NapcatUWP.Pages
 
             // 更新系統返回鍵可見性
             UpdateBackButtonVisibility();
+        }
+
+        /// <summary>
+        /// 启动联系人头像加载
+        /// </summary>
+        private async Task StartContactAvatarLoadingAsync()
+        {
+            try
+            {
+                await Task.Delay(200); // 短暂延迟让UI先渲染
+
+                if (_currentPage != "Contacts") return;
+
+                Debug.WriteLine("开始联系人页面头像加载");
+                // 这里的头像加载已在 CreateFriendItem 中处理
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"启动联系人头像加载时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 啟動群組頭像載入 - 優化版，避免卡頓
+        /// </summary>
+        private async Task StartGroupAvatarLoadingAsync()
+        {
+            try
+            {
+                await Task.Delay(500); // 短暫延遲讓UI先渲染
+
+                if (_currentPage != "Groups" || GroupItems == null) return;
+
+                Debug.WriteLine("開始安全群組頁面頭像載入");
+
+                // 限制同時載入的數量
+                var groupsToLoad = GroupItems.Take(10).ToList(); // 只載入前10個群組的頭像
+
+                foreach (var group in groupsToLoad)
+                {
+                    if (_currentPage != "Groups") break; // 如果用戶已切換頁面，停止載入
+
+                    // 使用低優先級異步載入
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var avatarImage = await AvatarManager.GetAvatarAsync("group", group.GroupId, priority: 2,
+                                useCache: true);
+
+                            if (avatarImage != null)
+                            {
+                                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                                    CoreDispatcherPriority.Low, () =>
+                                    {
+                                        try
+                                        {
+                                            if (group.AvatarImage == null)
+                                            {
+                                                group.AvatarImage = avatarImage;
+                                                Debug.WriteLine($"群組頭像載入成功: {group.GroupName}");
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Debug.WriteLine($"設置群組頭像時發生錯誤: {ex.Message}");
+                                        }
+                                    });
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"載入群組頭像時發生錯誤: {ex.Message}");
+                        }
+                    });
+
+                    // 分批載入，避免一次性請求過多
+                    await Task.Delay(100);
+                }
+
+                Debug.WriteLine("安全群組頭像載入啟動完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"啟動群組頭像載入時發生錯誤: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -2636,7 +3538,7 @@ namespace NapcatUWP.Pages
         }
 
         /// <summary>
-        ///     刷新數據庫統計信息
+        ///     刷新數據庫統計信息 - 包含头像队列状态
         /// </summary>
         private async void RefreshDatabaseStatistics()
         {
@@ -2646,6 +3548,12 @@ namespace NapcatUWP.Pages
 
                 // 在後台線程獲取統計信息
                 await Task.Run(() => { _databaseStatistics = DataAccess.GetDatabaseStatistics(); });
+
+                // 获取头像缓存统计
+                var avatarStats = await Task.Run(() => AvatarManager.GetCacheStatsAsync());
+
+                // 获取队列状态
+                var queueStatus = AvatarManager.GetQueueStatus();
 
                 // 更新UI
                 await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
@@ -2660,7 +3568,17 @@ namespace NapcatUWP.Pages
                         TotalSettingsText.Text = _databaseStatistics.TotalSettings.ToString();
                         DatabaseSizeText.Text = _databaseStatistics.DatabaseSizeFormatted;
 
-                        Debug.WriteLine("數據庫統計信息UI更新完成");
+                        // 显示头像缓存统计和队列状态
+                        var avatarText = $"{avatarStats.TotalCount}";
+                        if (queueStatus.QueueLength > 0 || queueStatus.IsProcessing)
+                        {
+                            avatarText += $" (队列: {queueStatus.QueueLength})";
+                        }
+
+                        TotalAvatarsText.Text = avatarText;
+                        AvatarCacheSizeText.Text = avatarStats.TotalSizeFormatted;
+
+                        Debug.WriteLine($"數據庫統計信息UI更新完成，头像队列长度: {queueStatus.QueueLength}");
                     });
             }
             catch (Exception ex)
@@ -2792,76 +3710,393 @@ namespace NapcatUWP.Pages
 
         #region 聊天列表更新方法（修復群組和私聊識別）
 
-        // 修改 UpdateChatItem 方法以正確處理群組和私聊
+        /// <summary>
+        /// 向後兼容的 UpdateChatItem 方法 - 舊簽名
+        /// </summary>
         public void UpdateChatItem(string chatName, string newMessage, bool incrementUnread = true)
         {
-            var existingChat = FindChatItemByName(chatName);
-            if (existingChat != null)
+            try
             {
-                existingChat.LastMessage = newMessage;
-                existingChat.LastTime = DateTime.Now.ToString("HH:mm");
+                if (string.IsNullOrEmpty(chatName))
+                {
+                    Debug.WriteLine("UpdateChatItem: 聊天名稱為空");
+                    return;
+                }
 
-                if (incrementUnread) existingChat.UnreadCount++;
+                Debug.WriteLine($"UpdateChatItem (向後兼容): 更新聊天項目 '{chatName}'");
 
-                ChatItems.Remove(existingChat);
-                ChatItems.Insert(0, existingChat);
+                // 先嘗試在現有聊天列表中找到匹配項
+                var existingChat =
+                    ChatItems?.FirstOrDefault(c => c.Name.Equals(chatName, StringComparison.OrdinalIgnoreCase));
+
+                if (existingChat != null)
+                {
+                    // 找到現有項目，使用新方法更新
+                    UpdateChatItem(existingChat.Name, existingChat.ChatId, existingChat.IsGroup, newMessage,
+                        incrementUnread);
+                }
+                else
+                {
+                    // 沒找到現有項目，創建新項目（需要推斷是群組還是好友）
+                    Debug.WriteLine($"未找到現有聊天項目，推斷聊天類型: {chatName}");
+
+                    // 嘗試匹配群組
+                    var groups = DataAccess.GetAllGroups();
+                    var matchedGroup = groups.FirstOrDefault(g =>
+                        !string.IsNullOrEmpty(g.GroupName) &&
+                        g.GroupName.Equals(chatName, StringComparison.OrdinalIgnoreCase));
+
+                    if (matchedGroup != null)
+                    {
+                        // 是群組
+                        UpdateChatItem(chatName, matchedGroup.GroupId, true, newMessage, incrementUnread);
+                        return;
+                    }
+
+                    // 嘗試匹配好友
+                    var friendCategories = DataAccess.GetAllFriendsWithCategories();
+                    FriendInfo matchedFriend = null;
+
+                    foreach (var category in friendCategories)
+                    {
+                        if (category?.BuddyList != null)
+                        {
+                            matchedFriend = category.BuddyList.FirstOrDefault(f =>
+                                (!string.IsNullOrEmpty(f.Remark) &&
+                                 f.Remark.Equals(chatName, StringComparison.OrdinalIgnoreCase)) ||
+                                (!string.IsNullOrEmpty(f.Nickname) &&
+                                 f.Nickname.Equals(chatName, StringComparison.OrdinalIgnoreCase)) ||
+                                (!string.IsNullOrEmpty(f.Nick) &&
+                                 f.Nick.Equals(chatName, StringComparison.OrdinalIgnoreCase)));
+
+                            if (matchedFriend != null) break;
+                        }
+                    }
+
+                    if (matchedFriend != null)
+                    {
+                        // 是好友
+                        UpdateChatItem(chatName, matchedFriend.UserId, false, newMessage, incrementUnread);
+                    }
+                    else
+                    {
+                        // 無法確定類型，創建一個默認的聊天項目
+                        Debug.WriteLine($"無法確定聊天類型，創建默認項目: {chatName}");
+                        UpdateChatItem(chatName, 0, false, newMessage, incrementUnread);
+                    }
+                }
             }
-            else
+            catch (Exception ex)
             {
-                // 新的聊天項目，需要確定是群組還是私聊
-                AddChatItemFromMessage(chatName, newMessage, incrementUnread ? 1 : 0);
+                Debug.WriteLine($"UpdateChatItem (向後兼容) 發生錯誤: {ex.Message}");
             }
         }
 
-        // 新方法：從消息創建聊天項目（自動識別群組/私聊）
+        /// <summary>
+        /// 修復版UpdateChatItem方法 - 確保正確的群組名稱顯示和防止重複項目
+        /// </summary>
+        public void UpdateChatItem(string senderName, long chatId, bool isGroup, string newMessage,
+            bool incrementUnread = true)
+        {
+            try
+            {
+                // 首先獲取正確的聊天名稱
+                string actualChatName;
+                if (isGroup)
+                {
+                    actualChatName = DataAccess.GetGroupNameById(chatId);
+                }
+                else
+                {
+                    actualChatName = DataAccess.GetFriendNameById(chatId);
+
+                    // 如果找不到好友信息，使用發送者名稱
+                    if (actualChatName.StartsWith("用戶 ") && !string.IsNullOrEmpty(senderName) && senderName != "我")
+                    {
+                        actualChatName = senderName;
+                    }
+                }
+
+                Debug.WriteLine(
+                    $"UpdateChatItem: ChatId={chatId}, IsGroup={isGroup}, ActualName='{actualChatName}', SenderName='{senderName}'");
+
+                // 確保 ChatItems 已初始化
+                if (ChatItems == null)
+                {
+                    ChatItems = new ObservableCollection<ChatItem>();
+                    if (ChatListView != null)
+                    {
+                        ChatListView.ItemsSource = ChatItems;
+                    }
+                }
+
+                // 先查找現有的聊天項目（使用ChatId和IsGroup精確匹配，而不是名稱）
+                var existingChat = ChatItems.FirstOrDefault(c => c.ChatId == chatId && c.IsGroup == isGroup);
+
+                if (existingChat != null)
+                {
+                    // 更新現有聊天項目
+                    existingChat.Name = actualChatName; // 確保使用正確的名稱
+                    existingChat.LastMessage = newMessage;
+                    existingChat.LastTime = DateTime.Now.ToString("HH:mm");
+
+                    if (incrementUnread && !IsCurrentChat(chatId, isGroup))
+                    {
+                        existingChat.UnreadCount++;
+                    }
+
+                    // 移動到列表頂部
+                    ChatItems.Remove(existingChat);
+                    ChatItems.Insert(0, existingChat);
+
+                    Debug.WriteLine($"更新現有聊天項目: {actualChatName} (ID: {chatId})");
+                }
+                else
+                {
+                    // 創建新的聊天項目
+                    Debug.WriteLine($"創建新聊天項目: {actualChatName} (ID: {chatId}, IsGroup: {isGroup})");
+
+                    var memberCount = 0;
+                    if (isGroup)
+                    {
+                        var groupInfo = DataAccess.GetGroupInfo(chatId);
+                        memberCount = groupInfo?.MemberCount ?? 0;
+                    }
+
+                    var newChatItem = new ChatItem
+                    {
+                        ChatId = chatId,
+                        Name = actualChatName,
+                        LastMessage = newMessage,
+                        LastTime = DateTime.Now.ToString("HH:mm"),
+                        UnreadCount = incrementUnread ? 1 : 0,
+                        AvatarColor = GetRandomAvatarColor(),
+                        IsGroup = isGroup,
+                        MemberCount = memberCount
+                    };
+
+                    // 插入到列表頂部
+                    ChatItems.Insert(0, newChatItem);
+
+                    // 延遲載入頭像以避免UI卡頓
+                    _ = Task.Delay(500).ContinueWith(_ =>
+                    {
+                        CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Low, () =>
+                        {
+                            try
+                            {
+                                newChatItem.LoadAvatarFromCacheAsync();
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"延遲載入頭像時發生錯誤: {ex.Message}");
+                            }
+                        });
+                    });
+
+                    Debug.WriteLine($"創建新聊天項目完成: {actualChatName}");
+                }
+
+                // 異步保存聊天列表緩存
+                _ = Task.Run(SaveChatListCacheAsync);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"UpdateChatItem 發生錯誤: {ex.Message}");
+                Debug.WriteLine(
+                    $"參數: ChatId={chatId}, IsGroup={isGroup}, SenderName='{senderName}', NewMessage='{newMessage}'");
+            }
+        }
+
+        /// <summary>
+        /// 优化的头像加载策略 - 减少并发数量
+        /// </summary>
+        private async void LoadAvatarsBatch()
+        {
+            try
+            {
+                if (ChatItems == null) return;
+
+                // 限制同时加载的头像数量
+                var itemsNeedingAvatars = ChatItems
+                    .Where(item => !item.HasAvatar && !item.IsLoadingAvatar)
+                    .Take(5) // 限制为5个
+                    .ToList();
+
+                if (itemsNeedingAvatars.Count == 0) return;
+
+                Debug.WriteLine($"开始加载 {itemsNeedingAvatars.Count} 个头像");
+
+                // 串行加载，避免并发压力
+                foreach (var item in itemsNeedingAvatars)
+                {
+                    try
+                    {
+                        item.LoadAvatarFromCacheAsync(); // 只从缓存加载
+                        await Task.Delay(200); // 间隔200ms
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"加载头像失败 {item.Name}: {ex.Message}");
+                    }
+                }
+
+                Debug.WriteLine("头像批量加载完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"头像批量加载错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 处理初始化失败
+        /// </summary>
+        private async Task HandleInitializationFailure(Exception ex)
+        {
+            try
+            {
+                Debug.WriteLine($"处理初始化失败: {ex.Message}");
+
+                // 确保基础UI可用
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.High, () =>
+                    {
+                        if (ChatItems == null)
+                        {
+                            ChatItems = new ObservableCollection<ChatItem>();
+                            ChatListView.ItemsSource = ChatItems;
+                        }
+
+                        // 显示错误提示
+                        var errorChat = new ChatItem
+                        {
+                            Name = "系统消息",
+                            LastMessage = "初始化遇到问题，请重新启动应用",
+                            LastTime = DateTime.Now.ToString("HH:mm"),
+                            AvatarColor = "#FFFF6B6B",
+                            ChatId = -1,
+                            IsGroup = false
+                        };
+                        ChatItems.Add(errorChat);
+                    });
+            }
+            catch (Exception handleEx)
+            {
+                Debug.WriteLine($"处理初始化失败时发生错误: {handleEx.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 安全的 AddChatItemFromMessage 方法 - 加強錯誤處理
+        /// </summary>
         private void AddChatItemFromMessage(string chatName, string lastMessage, int unreadCount = 0)
         {
-            // 先檢查是否為群組
-            var groups = DataAccess.GetAllGroups();
-            var group = groups.FirstOrDefault(g => g.GroupName.Equals(chatName, StringComparison.OrdinalIgnoreCase));
+            try
+            {
+                if (string.IsNullOrEmpty(chatName))
+                {
+                    Debug.WriteLine("AddChatItemFromMessage: 聊天名稱為空");
+                    return;
+                }
 
-            if (group != null)
-            {
-                // 是群組
-                AddChatItem(chatName, lastMessage, unreadCount, null, group.GroupId, true, group.MemberCount);
-                Debug.WriteLine($"添加群組聊天項目: {chatName}, ID: {group.GroupId}");
-            }
-            else
-            {
+                Debug.WriteLine($"AddChatItemFromMessage: 創建聊天項目 '{chatName}'");
+
+                // 確保 ChatItems 已初始化
+                if (ChatItems == null)
+                {
+                    ChatItems = new ObservableCollection<ChatItem>();
+                    if (ChatListView != null)
+                    {
+                        ChatListView.ItemsSource = ChatItems;
+                    }
+                }
+
+                // 先檢查是否為群組
+                var groups = DataAccess.GetAllGroups();
+                var group = groups?.FirstOrDefault(g =>
+                    !string.IsNullOrEmpty(g.GroupName) &&
+                    g.GroupName.Equals(chatName, StringComparison.OrdinalIgnoreCase));
+
+                if (group != null)
+                {
+                    // 是群組
+                    AddChatItem(chatName, lastMessage, unreadCount, null, group.GroupId, true, group.MemberCount);
+                    Debug.WriteLine($"添加群組聊天項目: {chatName}, ID: {group.GroupId}");
+                    return;
+                }
+
                 // 檢查是否為好友
                 var friendCategories = DataAccess.GetAllFriendsWithCategories();
                 FriendInfo friend = null;
 
-                foreach (var category in friendCategories)
-                    if (category.BuddyList != null)
+                if (friendCategories != null)
+                {
+                    foreach (var category in friendCategories)
                     {
-                        friend = category.BuddyList.FirstOrDefault(f =>
-                            (!string.IsNullOrEmpty(f.Remark) &&
-                             f.Remark.Equals(chatName, StringComparison.OrdinalIgnoreCase)) ||
-                            (!string.IsNullOrEmpty(f.Nickname) &&
-                             f.Nickname.Equals(chatName, StringComparison.OrdinalIgnoreCase)) ||
-                            (!string.IsNullOrEmpty(f.Nick) &&
-                             f.Nick.Equals(chatName, StringComparison.OrdinalIgnoreCase)));
+                        if (category?.BuddyList != null)
+                        {
+                            friend = category.BuddyList.FirstOrDefault(f =>
+                                f != null &&
+                                ((!string.IsNullOrEmpty(f.Remark) &&
+                                  f.Remark.Equals(chatName, StringComparison.OrdinalIgnoreCase)) ||
+                                 (!string.IsNullOrEmpty(f.Nickname) &&
+                                  f.Nickname.Equals(chatName, StringComparison.OrdinalIgnoreCase)) ||
+                                 (!string.IsNullOrEmpty(f.Nick) &&
+                                  f.Nick.Equals(chatName, StringComparison.OrdinalIgnoreCase))));
 
-                        if (friend != null) break;
+                            if (friend != null) break;
+                        }
                     }
+                }
 
                 if (friend != null)
                 {
                     // 是好友
-                    AddChatItem(chatName, lastMessage, unreadCount, null, friend.UserId);
+                    AddChatItem(chatName, lastMessage, unreadCount, null, friend.UserId, false, 0);
                     Debug.WriteLine($"添加好友聊天項目: {chatName}, ID: {friend.UserId}");
                 }
                 else
                 {
                     // 未知聊天，默認為私聊
-                    AddChatItem(chatName, lastMessage, unreadCount, null, 0);
+                    AddChatItem(chatName, lastMessage, unreadCount, null, 0, false, 0);
                     Debug.WriteLine($"添加未知聊天項目: {chatName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"AddChatItemFromMessage 發生錯誤: {ex.Message}");
+                Debug.WriteLine($"參數: chatName='{chatName}', lastMessage='{lastMessage}', unreadCount={unreadCount}");
+
+                // 回退：如果所有操作都失敗，至少創建一個基本的聊天項目
+                try
+                {
+                    if (ChatItems != null)
+                    {
+                        var fallbackItem = new ChatItem
+                        {
+                            Name = chatName,
+                            LastMessage = lastMessage,
+                            LastTime = DateTime.Now.ToString("HH:mm"),
+                            UnreadCount = unreadCount,
+                            AvatarColor = GetRandomAvatarColor(),
+                            ChatId = 0,
+                            IsGroup = false,
+                            MemberCount = 0
+                        };
+
+                        ChatItems.Insert(0, fallbackItem);
+                        Debug.WriteLine($"創建回退聊天項目: {chatName}");
+                    }
+                }
+                catch (Exception fallbackEx)
+                {
+                    Debug.WriteLine($"創建回退聊天項目也失敗: {fallbackEx.Message}");
                 }
             }
         }
 
-        // 修改 AddChatItem 方法以支持更多參數
+        // 修改 AddChatItem 方法
         public void AddChatItem(string name, string lastMessage, int unreadCount = 0, string avatarColor = null,
             long chatId = 0, bool isGroup = false, int memberCount = 0)
         {
@@ -2879,7 +4114,77 @@ namespace NapcatUWP.Pages
                 MemberCount = memberCount
             };
 
+            // 先从缓存加载头像
+            newChatItem.LoadAvatarFromCacheAsync();
+
             ChatItems.Insert(0, newChatItem);
+
+            // 延迟网络加载（低优先级）
+            _ = Task.Delay(3000).ContinueWith(_ =>
+            {
+                if (!newChatItem.HasAvatar)
+                {
+                    newChatItem.LoadAvatarAsync(priority: 2, useCache: false);
+                }
+            });
+
+            Debug.WriteLine($"添加新聊天项目: {name}, ChatId: {chatId}, IsGroup: {isGroup}");
+        }
+
+
+        /// <summary>
+        /// 刷新缺失的头像（优化版 - 分批处理）
+        /// </summary>
+        private async Task RefreshMissingAvatarsAsync()
+        {
+            try
+            {
+                await Task.Delay(5000); // 延迟5秒，确保界面完全加载
+
+                var itemsWithoutAvatars = new List<ChatItem>();
+
+                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                    CoreDispatcherPriority.Low,
+                    () =>
+                    {
+                        foreach (var chatItem in ChatItems)
+                        {
+                            if (!chatItem.HasAvatar && !chatItem.IsLoadingAvatar)
+                            {
+                                itemsWithoutAvatars.Add(chatItem);
+                            }
+                        }
+                    });
+
+                Debug.WriteLine($"开始分批刷新 {itemsWithoutAvatars.Count} 个缺失的头像");
+
+                // 分批处理，避免一次性发送过多请求
+                const int batchSize = 5;
+                for (int i = 0; i < itemsWithoutAvatars.Count; i += batchSize)
+                {
+                    var batch = itemsWithoutAvatars.Skip(i).Take(batchSize).ToList();
+
+                    // 并行处理每批
+                    var tasks = batch.Select(item => Task.Run(() =>
+                    {
+                        item.LoadAvatarAsync(priority: 2, useCache: false);
+                    })).ToArray();
+
+                    await Task.WhenAll(tasks);
+
+                    // 批次间延迟，避免请求过快
+                    if (i + batchSize < itemsWithoutAvatars.Count)
+                    {
+                        await Task.Delay(1000);
+                    }
+                }
+
+                Debug.WriteLine("缺失头像刷新完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"刷新缺失头像时发生错误: {ex.Message}");
+            }
         }
 
         #endregion
@@ -2906,10 +4211,50 @@ namespace NapcatUWP.Pages
             ChatItems.Insert(0, newChatItem);
         }
 
+        /// <summary>
+        /// 安全的 FindChatItemByName 方法 - 修復 null 引用問題
+        /// </summary>
         public ChatItem FindChatItemByName(string name)
         {
-            return ChatItems.FirstOrDefault(chat =>
-                chat.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            try
+            {
+                // 安全檢查：確保 ChatItems 不為 null 且 name 有效
+                if (ChatItems == null)
+                {
+                    Debug.WriteLine("FindChatItemByName: ChatItems 集合為 null，正在重新初始化");
+                    ChatItems = new ObservableCollection<ChatItem>();
+                    return null;
+                }
+
+                if (string.IsNullOrEmpty(name))
+                {
+                    Debug.WriteLine("FindChatItemByName: 搜索名稱為空或 null");
+                    return null;
+                }
+
+                Debug.WriteLine($"FindChatItemByName: 在 {ChatItems.Count} 個項目中搜索 '{name}'");
+
+                return ChatItems.FirstOrDefault(chat =>
+                    chat != null && !string.IsNullOrEmpty(chat.Name) &&
+                    chat.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"FindChatItemByName 發生錯誤: {ex.Message}");
+                Debug.WriteLine($"ChatItems 狀態: {(ChatItems == null ? "null" : $"Count={ChatItems.Count}")}");
+
+                // 如果 ChatItems 為 null，重新初始化
+                if (ChatItems == null)
+                {
+                    ChatItems = new ObservableCollection<ChatItem>();
+                    if (ChatListView != null)
+                    {
+                        ChatListView.ItemsSource = ChatItems;
+                    }
+                }
+
+                return null;
+            }
         }
 
         public bool RemoveChatItem(string chatName)

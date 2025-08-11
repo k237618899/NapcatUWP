@@ -989,9 +989,9 @@ namespace NapcatUWP.Controls.APIHandler
                             _mainView?.AddIncomingMessage(actualSenderName, chatId, actualSenderId, messageText, true,
                                 messageSegments);
 
-                            // 更新聊天列表（显示发送者: 消息内容）
+                            // 更新聊天列表（显示发送者: 消息内容）- 修復參數
                             var displayMessage = $"{actualSenderName}: {messageText}";
-                            _mainView?.UpdateChatItem(groupName, displayMessage);
+                            _mainView?.UpdateChatItem(actualSenderName, chatId, isGroup, displayMessage);
 
                             Debug.WriteLine("OneBotAPIHandler: 群组消息处理完成");
                         });
@@ -1023,8 +1023,8 @@ namespace NapcatUWP.Controls.APIHandler
                             _mainView?.AddIncomingMessage(senderName, chatId, actualSenderId, messageText, false,
                                 messageSegments);
 
-                            // 更新聊天列表
-                            _mainView?.UpdateChatItem(senderName, messageText);
+                            // 更新聊天列表 - 修復參數
+                            _mainView?.UpdateChatItem(senderName, chatId, isGroup, messageText);
 
                             Debug.WriteLine("OneBotAPIHandler: 私聊消息处理完成");
                         });
@@ -1146,8 +1146,8 @@ namespace NapcatUWP.Controls.APIHandler
                             Debug.WriteLine("OneBotAPIHandler: 已添加發送消息到當前聊天界面");
                         }
 
-                        // 更新聊天列表（不增加未讀數量）
-                        _mainView?.UpdateChatItem(targetName, $"我: {messageText}", false);
+                        // 更新聊天列表（不增加未讀數量）- 修復參數
+                        _mainView?.UpdateChatItem("我", targetId, isGroup, $"我: {messageText}", false);
 
                         Debug.WriteLine("OneBotAPIHandler: 發送消息確認處理完成");
                     });

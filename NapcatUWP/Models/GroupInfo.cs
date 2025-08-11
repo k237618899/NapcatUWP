@@ -1,73 +1,79 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
+using Windows.UI.Xaml.Media.Imaging;
+using NapcatUWP.Tools;
 
 namespace NapcatUWP.Models
 {
     public class GroupInfo : INotifyPropertyChanged
     {
-        private bool _groupAllShut;
-        private long _groupId;
-        private string _groupName;
-        private string _groupRemark;
-        private int _maxMemberCount;
-        private int _memberCount;
+        private BitmapImage _avatarImage;
+        private bool _isLoadingAvatar;
 
-        public long GroupId
+        public long GroupId { get; set; }
+        public string GroupName { get; set; }
+        public string GroupRemark { get; set; }
+        public int MemberCount { get; set; }
+        public int MaxMemberCount { get; set; }
+        public bool GroupAllShut { get; set; }
+
+        /// <summary>
+        /// 头像图片
+        /// </summary>
+        public BitmapImage AvatarImage
         {
-            get => _groupId;
+            get => _avatarImage;
             set
             {
-                _groupId = value;
-                OnPropertyChanged(nameof(GroupId));
+                _avatarImage = value;
+                OnPropertyChanged(nameof(AvatarImage));
+                OnPropertyChanged(nameof(HasAvatar));
             }
         }
 
-        public string GroupName
+        /// <summary>
+        /// 是否正在加载头像
+        /// </summary>
+        public bool IsLoadingAvatar
         {
-            get => _groupName;
+            get => _isLoadingAvatar;
             set
             {
-                _groupName = value;
-                OnPropertyChanged(nameof(GroupName));
+                _isLoadingAvatar = value;
+                OnPropertyChanged(nameof(IsLoadingAvatar));
             }
         }
 
-        public string GroupRemark
-        {
-            get => _groupRemark;
-            set
-            {
-                _groupRemark = value;
-                OnPropertyChanged(nameof(GroupRemark));
-            }
-        }
+        /// <summary>
+        /// 是否有头像图片
+        /// </summary>
+        public bool HasAvatar => _avatarImage != null;
 
-        public int MemberCount
+        /// <summary>
+        /// 异步加载头像
+        /// </summary>
+        public async void LoadAvatarAsync()
         {
-            get => _memberCount;
-            set
-            {
-                _memberCount = value;
-                OnPropertyChanged(nameof(MemberCount));
-            }
-        }
+            if (IsLoadingAvatar || HasAvatar)
+                return;
 
-        public int MaxMemberCount
-        {
-            get => _maxMemberCount;
-            set
-            {
-                _maxMemberCount = value;
-                OnPropertyChanged(nameof(MaxMemberCount));
-            }
-        }
+            IsLoadingAvatar = true;
 
-        public bool GroupAllShut
-        {
-            get => _groupAllShut;
-            set
+            try
             {
-                _groupAllShut = value;
-                OnPropertyChanged(nameof(GroupAllShut));
+                var avatarImage = await AvatarManager.GetAvatarAsync("group", GroupId);
+
+                if (avatarImage != null)
+                {
+                    AvatarImage = avatarImage;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"加载群组头像失败: {ex.Message}");
+            }
+            finally
+            {
+                IsLoadingAvatar = false;
             }
         }
 

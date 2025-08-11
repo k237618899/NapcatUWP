@@ -1,4 +1,6 @@
-﻿using System;
+﻿using NapcatUWP.Tools;
+using System;
+using System.Threading.Tasks;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.UI.Xaml;
@@ -27,37 +29,95 @@ namespace NapcatUWP
         ///     将在启动应用程序以打开特定文件等情况下使用。
         /// </summary>
         /// <param name="e">有关启动请求和过程的详细信息。</param>
-        protected override void OnLaunched(LaunchActivatedEventArgs e)
+        protected override async void OnLaunched(LaunchActivatedEventArgs e)
         {
             var rootFrame = Window.Current.Content as Frame;
 
-            // 不要在窗口已包含内容时重复应用程序初始化，
-            // 只需确保窗口处于活动状态
             if (rootFrame == null)
             {
-                // 创建要充当导航上下文的框架，并导航到第一页
                 rootFrame = new Frame();
-
                 rootFrame.NavigationFailed += OnNavigationFailed;
+
+                // 添加全局异常处理
+                this.UnhandledException += App_UnhandledException;
 
                 if (e.PreviousExecutionState == ApplicationExecutionState.Terminated)
                 {
-                    //TODO: 从之前挂起的应用程序加载状态
+                    try
+                    {
+                        // 清理可能损坏的缓存
+                        await CleanupCorruptedCacheAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"清理缓存时发生错误: {ex.Message}");
+                    }
                 }
 
-                // 将框架放在当前窗口中
+                // 安全初始化头像管理器
+                _ = InitializeAvatarManagerSafeAsync();
+
                 Window.Current.Content = rootFrame;
             }
 
             if (e.PrelaunchActivated == false)
             {
                 if (rootFrame.Content == null)
-                    // 当导航堆栈尚未还原时，导航到第一页，
-                    // 并通过将所需信息作为导航参数传入来配置
-                    // 参数
                     rootFrame.Navigate(typeof(MainPage), e.Arguments);
-                // 确保当前窗口处于活动状态
                 Window.Current.Activate();
+            }
+        }
+
+        /// <summary>
+        /// 全局异常处理器 - 防止应用崩溃
+        /// </summary>
+        private void App_UnhandledException(object sender, Windows.UI.Xaml.UnhandledExceptionEventArgs e)
+        {
+            System.Diagnostics.Debug.WriteLine($"未处理异常: {e.Exception.Message}");
+            System.Diagnostics.Debug.WriteLine($"异常类型: {e.Exception.GetType().Name}");
+            System.Diagnostics.Debug.WriteLine($"堆栈: {e.Exception.StackTrace}");
+
+            // 标记异常已处理，防止应用崩溃
+            e.Handled = true;
+
+            // 对于集合访问异常，尝试恢复
+            if (e.Exception is ArgumentOutOfRangeException ||
+                e.Exception is InvalidOperationException ||
+                e.Exception.Message.Contains("Collection was modified"))
+            {
+                System.Diagnostics.Debug.WriteLine("检测到集合操作异常，尝试恢复应用状态");
+
+                // 可以在这里添加恢复逻辑
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(1000);
+                    // 重新初始化关键组件
+                });
+            }
+        }
+
+        private async Task CleanupCorruptedCacheAsync()
+        {
+            try
+            {
+                await AvatarManager.CleanExpiredCacheAsync(0); // 清理所有过期缓存
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"清理缓存失败: {ex.Message}");
+            }
+        }
+
+        private async Task InitializeAvatarManagerSafeAsync()
+        {
+            try
+            {
+                await AvatarManager.InitializeAsync();
+                System.Diagnostics.Debug.WriteLine("头像管理器初始化成功");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"头像管理器初始化失败: {ex.Message}");
             }
         }
 
@@ -78,9 +138,21 @@ namespace NapcatUWP
         /// </summary>
         /// <param name="sender">挂起的请求的源。</param>
         /// <param name="e">有关挂起请求的详细信息。</param>
-        private void OnSuspending(object sender, SuspendingEventArgs e)
+        private async void OnSuspending(object sender, SuspendingEventArgs e)
         {
             var deferral = e.SuspendingOperation.GetDeferral();
+
+            try
+            {
+                // 清理过期的头像缓存
+                await AvatarManager.CleanExpiredCacheAsync(30);
+                System.Diagnostics.Debug.WriteLine("应用挂起时清理头像缓存完成");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"清理头像缓存时发生错误: {ex.Message}");
+            }
+
             //TODO: 保存应用程序状态并停止任何后台活动
             deferral.Complete();
         }

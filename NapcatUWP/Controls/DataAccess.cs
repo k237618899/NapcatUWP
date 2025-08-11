@@ -10,6 +10,7 @@ using NapcatUWP.Models;
 using NapcatUWP.Tools;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Threading.Tasks;
 
 namespace NapcatUWP.Controls
 {
@@ -46,6 +47,7 @@ namespace NapcatUWP.Controls
 
                 var createGroupsTableCmd = new SqliteCommand(createGroupsTable, db);
                 createGroupsTableCmd.ExecuteNonQuery();
+
                 // 創建群組成員表
                 var createGroupMembersTable = @"
                 CREATE TABLE IF NOT EXISTS GroupMembers (
@@ -219,6 +221,29 @@ namespace NapcatUWP.Controls
 
                 var createChatListCacheTableCmd = new SqliteCommand(createChatListCacheTable, db);
                 createChatListCacheTableCmd.ExecuteNonQuery();
+
+                // 創建頭像緩存表
+                var createAvatarCacheTable = @"
+                CREATE TABLE IF NOT EXISTS AvatarCache (
+                    AvatarKey TEXT PRIMARY KEY,
+                    AvatarType TEXT NOT NULL,
+                    UserId INTEGER,
+                    GroupId INTEGER,
+                    AvatarUrl TEXT NOT NULL,
+                    LocalPath TEXT NOT NULL,
+                    LastUpdated TEXT NOT NULL,
+                    FileSize INTEGER DEFAULT 0
+                )";
+
+                var createAvatarCacheTableCmd = new SqliteCommand(createAvatarCacheTable, db);
+                createAvatarCacheTableCmd.ExecuteNonQuery();
+
+                // 創建頭像緩存索引以提高查詢性能
+                var createAvatarCacheIndexCmd = new SqliteCommand(@"
+                CREATE INDEX IF NOT EXISTS idx_avatar_cache_type_id 
+                ON AvatarCache(AvatarType, UserId, GroupId)", db);
+                createAvatarCacheIndexCmd.ExecuteNonQuery();
+
                 // 在 InitializeDatabase 方法的最後添加
                 FixDatabaseTimestamps();
                 Debug.WriteLine("數據庫初始化完成");
@@ -288,6 +313,72 @@ namespace NapcatUWP.Controls
                 updateCommand.ExecuteNonQuery();
             }
         }
+
+        #region 头像管理辅助方法
+
+        /// <summary>
+        /// 预加载聊天列表头像
+        /// </summary>
+        /// <param name="chatItems">聊天列表项目</param>
+        public static async Task PreloadChatListAvatarsAsync(IEnumerable<ChatItem> chatItems)
+        {
+            try
+            {
+                var friendIds = new List<long>();
+                var groupIds = new List<long>();
+
+                foreach (var chatItem in chatItems)
+                {
+                    if (chatItem.IsGroup)
+                        groupIds.Add(chatItem.ChatId);
+                    else
+                        friendIds.Add(chatItem.ChatId);
+                }
+
+                // 预加载好友头像
+                if (friendIds.Count > 0)
+                {
+                    await AvatarManager.PreloadFriendAvatarsAsync(friendIds);
+                }
+
+                // 预加载群组头像
+                if (groupIds.Count > 0)
+                {
+                    await AvatarManager.PreloadGroupAvatarsAsync(groupIds);
+                }
+
+                Debug.WriteLine($"聊天列表头像预加载完成：{friendIds.Count} 个好友，{groupIds.Count} 个群组");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"预加载聊天列表头像时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 获取用户头像URL
+        /// </summary>
+        /// <param name="userId">用户ID</param>
+        /// <param name="isCurrentUser">是否为当前用户</param>
+        /// <returns>头像URL</returns>
+        public static string GetUserAvatarUrl(long userId, bool isCurrentUser = false)
+        {
+            return isCurrentUser
+                ? AvatarManager.GetCurrentUserAvatarUrl(userId)
+                : AvatarManager.GetFriendAvatarUrl(userId);
+        }
+
+        /// <summary>
+        /// 获取群组头像URL
+        /// </summary>
+        /// <param name="groupId">群组ID</param>
+        /// <returns>头像URL</returns>
+        public static string GetGroupAvatarUrl(long groupId)
+        {
+            return AvatarManager.GetGroupAvatarUrl(groupId);
+        }
+
+        #endregion
 
         #region 群組數據操作
 
@@ -672,6 +763,9 @@ namespace NapcatUWP.Controls
 
         #region 根據ID查找名稱的輔助方法
 
+        /// <summary>
+        /// 增強版群組名稱獲取 - 修復聊天列表顯示問題
+        /// </summary>
         public static string GetGroupNameById(long groupId)
         {
             try
@@ -681,18 +775,54 @@ namespace NapcatUWP.Controls
                 {
                     db.Open();
 
-                    var selectCommand = new SqliteCommand("SELECT GroupName FROM Groups WHERE GroupId = @groupId", db);
+                    var selectCommand = new SqliteCommand(@"
+                SELECT GroupName, GroupRemark FROM Groups WHERE GroupId = @groupId", db);
                     selectCommand.Parameters.AddWithValue("@groupId", groupId);
 
-                    var result = selectCommand.ExecuteScalar();
-                    return result?.ToString() ?? $"群組 {groupId}";
+                    using (var query = selectCommand.ExecuteReader())
+                    {
+                        if (query.Read())
+                        {
+                            var groupName = Convert.ToString(query["GroupName"]) ?? "";
+                            var groupRemark = query.IsDBNull(query.GetOrdinal("GroupRemark"))
+                                ? ""
+                                : Convert.ToString(query["GroupRemark"]);
+
+                            // 優先使用 GroupName（實際群組名稱），如果沒有則使用 GroupRemark
+                            var displayName = !string.IsNullOrEmpty(groupName) ? groupName : groupRemark;
+
+                            if (!string.IsNullOrEmpty(displayName))
+                            {
+                                Debug.WriteLine($"獲取群組名稱成功: {groupId} -> {displayName}");
+                                return displayName;
+                            }
+                        }
+                    }
+
+                    // 如果沒有找到群組信息，嘗試從聊天記錄中查找
+                    var messageCommand = new SqliteCommand(@"
+                SELECT DISTINCT SenderName 
+                FROM Messages 
+                WHERE ChatId = @groupId AND IsGroup = 1 
+                ORDER BY Timestamp DESC 
+                LIMIT 1", db);
+                    messageCommand.Parameters.AddWithValue("@groupId", groupId);
+
+                    var senderResult = messageCommand.ExecuteScalar();
+                    if (senderResult != null)
+                    {
+                        // 從最近的消息記錄中提取可能的群組信息
+                        Debug.WriteLine($"從消息記錄中找到群組相關信息: {senderResult}");
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"獲取群組名稱錯誤: {ex.Message}");
-                return $"群組 {groupId}";
             }
+
+            Debug.WriteLine($"群組名稱未找到，使用默認格式: 群組 {groupId}");
+            return $"群組 {groupId}";
         }
 
         // 在 GetFriendNameById 方法中添加更好的錯誤處理
@@ -1229,10 +1359,88 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        ///     載入聊天列表緩存
+        /// 智能保存聊天列表緩存 - 避免界面閃爍
         /// </summary>
-        /// <param name="account">當前登入的帳號</param>
-        /// <returns>緩存的聊天列表</returns>
+        public static void SaveChatListCacheSmart(string account, IEnumerable<ChatItem> chatItems)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(account) || chatItems == null)
+                    return;
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    using (var transaction = db.BeginTransaction())
+                    {
+                        try
+                        {
+                            // 使用 INSERT OR REPLACE 而不是先DELETE再INSERT
+                            var upsertCommand = new SqliteCommand(@"
+                        INSERT OR REPLACE INTO ChatListCache 
+                        (Account, ChatId, ChatName, LastMessage, LastTime, UnreadCount, AvatarColor, IsGroup, MemberCount, LastUpdated) 
+                        VALUES (@account, @chatId, @chatName, @lastMessage, @lastTime, @unreadCount, @avatarColor, @isGroup, @memberCount, @lastUpdated)",
+                                db, transaction);
+
+                            var savedCount = 0;
+                            foreach (var chatItem in chatItems)
+                            {
+                                upsertCommand.Parameters.Clear();
+                                upsertCommand.Parameters.AddWithValue("@account", account);
+                                upsertCommand.Parameters.AddWithValue("@chatId", chatItem.ChatId);
+                                upsertCommand.Parameters.AddWithValue("@chatName", chatItem.Name ?? "");
+                                upsertCommand.Parameters.AddWithValue("@lastMessage", chatItem.LastMessage ?? "");
+                                upsertCommand.Parameters.AddWithValue("@lastTime", chatItem.LastTime ?? "");
+                                upsertCommand.Parameters.AddWithValue("@unreadCount", chatItem.UnreadCount);
+                                upsertCommand.Parameters.AddWithValue("@avatarColor", chatItem.AvatarColor ?? "");
+                                upsertCommand.Parameters.AddWithValue("@isGroup", chatItem.IsGroup ? 1 : 0);
+                                upsertCommand.Parameters.AddWithValue("@memberCount", chatItem.MemberCount);
+                                upsertCommand.Parameters.AddWithValue("@lastUpdated",
+                                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+
+                                upsertCommand.ExecuteNonQuery();
+                                savedCount++;
+                            }
+
+                            // 清理不再存在的聊天（可選，定期執行而非每次都執行）
+                            var currentTime = DateTime.Now;
+                            if (currentTime.Hour == 0 && currentTime.Minute < 5) // 每天凌晨執行一次清理
+                            {
+                                var cleanupCommand = new SqliteCommand(@"
+                            DELETE FROM ChatListCache 
+                            WHERE Account = @account 
+                            AND LastUpdated < datetime('now', '-7 days')", db, transaction);
+                                cleanupCommand.Parameters.AddWithValue("@account", account);
+                                var cleanedCount = cleanupCommand.ExecuteNonQuery();
+                                if (cleanedCount > 0)
+                                {
+                                    Debug.WriteLine($"清理過期聊天緩存: {cleanedCount} 條記錄");
+                                }
+                            }
+
+                            transaction.Commit();
+                            Debug.WriteLine($"智能保存帳號 {account} 的聊天列表緩存: {savedCount} 個聊天項目");
+                        }
+                        catch (Exception transactionEx)
+                        {
+                            transaction.Rollback();
+                            Debug.WriteLine($"智能保存聊天列表緩存事務錯誤: {transactionEx.Message}");
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"智能保存聊天列表緩存錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 優化版 LoadChatListCache - 確保群組名稱正確載入
+        /// </summary>
         public static List<ChatItem> LoadChatListCache(string account)
         {
             var chatItems = new List<ChatItem>();
@@ -1251,24 +1459,46 @@ namespace NapcatUWP.Controls
                     db.Open();
 
                     var selectCommand = new SqliteCommand(@"
-                        SELECT * FROM ChatListCache 
-                        WHERE Account = @account 
-                        ORDER BY LastUpdated DESC", db);
+                SELECT * FROM ChatListCache 
+                WHERE Account = @account 
+                ORDER BY LastUpdated DESC", db);
                     selectCommand.Parameters.AddWithValue("@account", account);
 
                     using (var query = selectCommand.ExecuteReader())
                     {
                         while (query.Read())
                         {
+                            var chatId = Convert.ToInt64(query["ChatId"]);
+                            var isGroup = Convert.ToInt32(query["IsGroup"]) == 1;
+                            var cachedName = Convert.ToString(query["ChatName"]) ?? "";
+
+                            // 總是動態獲取最新的名稱信息，而不依賴緩存中的名稱
+                            string actualName;
+                            if (isGroup)
+                            {
+                                actualName = GetGroupNameById(chatId);
+                            }
+                            else
+                            {
+                                actualName = GetFriendNameById(chatId);
+
+                                // 如果找不到好友信息，保留緩存中的名稱（如果有的話）
+                                if (actualName.StartsWith("用戶 ") && !string.IsNullOrEmpty(cachedName) &&
+                                    !cachedName.StartsWith("用戶 "))
+                                {
+                                    actualName = cachedName;
+                                }
+                            }
+
                             var chatItem = new ChatItem
                             {
-                                ChatId = Convert.ToInt64(query["ChatId"]),
-                                Name = Convert.ToString(query["ChatName"]) ?? "",
+                                ChatId = chatId,
+                                Name = actualName, // 使用動態獲取的實際名稱
                                 LastMessage = Convert.ToString(query["LastMessage"]) ?? "",
                                 LastTime = Convert.ToString(query["LastTime"]) ?? "",
                                 UnreadCount = Convert.ToInt32(query["UnreadCount"]),
                                 AvatarColor = Convert.ToString(query["AvatarColor"]) ?? "#FF4A90E2",
-                                IsGroup = Convert.ToInt32(query["IsGroup"]) == 1,
+                                IsGroup = isGroup,
                                 MemberCount = Convert.ToInt32(query["MemberCount"])
                             };
 
@@ -1277,6 +1507,13 @@ namespace NapcatUWP.Controls
                     }
 
                     Debug.WriteLine($"載入帳號 {account} 的聊天列表緩存: {chatItems.Count} 個聊天項目");
+
+                    // 記錄名稱修復情況
+                    var groupsFixed = chatItems.Count(c => c.IsGroup && !c.Name.StartsWith("群組 "));
+                    if (groupsFixed > 0)
+                    {
+                        Debug.WriteLine($"成功修復 {groupsFixed} 個群組的名稱顯示");
+                    }
                 }
             }
             catch (Exception ex)
@@ -2731,7 +2968,7 @@ namespace NapcatUWP.Controls
         #region 數據庫管理和統計
 
         /// <summary>
-        ///     刪除所有聊天資料
+        ///     刪除所有聊天資料 - 包含头像缓存
         /// </summary>
         public static void DeleteAllChatData()
         {
@@ -2754,9 +2991,17 @@ namespace NapcatUWP.Controls
                             var deleteChatListCmd = new SqliteCommand("DELETE FROM ChatListCache", db, transaction);
                             var deletedChatList = deleteChatListCmd.ExecuteNonQuery();
 
+                            // 删除头像缓存记录
+                            var deleteAvatarCacheCmd = new SqliteCommand("DELETE FROM AvatarCache", db, transaction);
+                            var deletedAvatarCache = deleteAvatarCacheCmd.ExecuteNonQuery();
+
                             transaction.Commit();
 
-                            Debug.WriteLine($"成功刪除所有聊天資料：{deletedMessages} 條消息，{deletedChatList} 個聊天列表項");
+                            Debug.WriteLine(
+                                $"成功刪除所有聊天資料：{deletedMessages} 條消息，{deletedChatList} 個聊天列表項，{deletedAvatarCache} 個头像缓存记录");
+
+                            // 删除头像缓存文件夹
+                            _ = DeleteAvatarCacheFilesAsync();
                         }
                         catch (Exception ex)
                         {
@@ -2775,7 +3020,37 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        ///     獲取數據庫統計信息
+        /// 异步删除头像缓存文件
+        /// </summary>
+        private static async Task DeleteAvatarCacheFilesAsync()
+        {
+            try
+            {
+                var cacheFolder = await ApplicationData.Current.LocalFolder.GetFolderAsync("AvatarCache");
+                var files = await cacheFolder.GetFilesAsync();
+
+                foreach (var file in files)
+                {
+                    try
+                    {
+                        await file.DeleteAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"删除头像缓存文件失败: {file.Name}, {ex.Message}");
+                    }
+                }
+
+                Debug.WriteLine($"头像缓存文件清理完成，删除了 {files.Count} 个文件");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"删除头像缓存文件夹时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     获取数据库统计信息 - 修复数据库大小显示
         /// </summary>
         public static DatabaseStatistics GetDatabaseStatistics()
         {
@@ -2788,49 +3063,65 @@ namespace NapcatUWP.Controls
                 {
                     db.Open();
 
-                    // 獲取消息數量
+                    // 获取消息数量
                     var messagesCountCmd = new SqliteCommand("SELECT COUNT(*) FROM Messages", db);
                     stats.TotalMessages = Convert.ToInt32(messagesCountCmd.ExecuteScalar());
 
-                    // 獲取群組數量
+                    // 获取群组数量
                     var groupsCountCmd = new SqliteCommand("SELECT COUNT(*) FROM Groups", db);
                     stats.TotalGroups = Convert.ToInt32(groupsCountCmd.ExecuteScalar());
 
-                    // 獲取好友數量
+                    // 获取好友数量
                     var friendsCountCmd = new SqliteCommand("SELECT COUNT(*) FROM Friends", db);
                     stats.TotalFriends = Convert.ToInt32(friendsCountCmd.ExecuteScalar());
 
-                    // 獲取好友分類數量
+                    // 获取好友分类数量
                     var categoriesCountCmd = new SqliteCommand("SELECT COUNT(*) FROM FriendCategories", db);
                     stats.TotalCategories = Convert.ToInt32(categoriesCountCmd.ExecuteScalar());
 
-                    // 獲取群組成員數量
+                    // 获取群组成员数量
                     var groupMembersCountCmd = new SqliteCommand("SELECT COUNT(*) FROM GroupMembers", db);
                     stats.TotalGroupMembers = Convert.ToInt32(groupMembersCountCmd.ExecuteScalar());
 
-                    // 獲取聊天列表緩存數量
+                    // 获取聊天列表缓存数量
                     var chatListCountCmd = new SqliteCommand("SELECT COUNT(*) FROM ChatListCache", db);
                     stats.TotalChatListItems = Convert.ToInt32(chatListCountCmd.ExecuteScalar());
 
-                    // 獲取設定項數量
+                    // 获取设定项数量
                     var settingsCountCmd = new SqliteCommand("SELECT COUNT(*) FROM AppSettings", db);
                     stats.TotalSettings = Convert.ToInt32(settingsCountCmd.ExecuteScalar());
 
-                    // 獲取數據庫文件大小
-                    var fileInfo = new FileInfo(dbpath);
-                    stats.DatabaseSize = fileInfo.Length;
-
-                    Debug.WriteLine(
-                        $"獲取數據庫統計信息成功：消息 {stats.TotalMessages} 條，群組 {stats.TotalGroups} 個，好友 {stats.TotalFriends} 個");
+                    // 获取头像缓存数量和大小
+                    var avatarCountCmd =
+                        new SqliteCommand("SELECT COUNT(*), COALESCE(SUM(FileSize), 0) FROM AvatarCache", db);
+                    using (var reader = avatarCountCmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            stats.TotalAvatars = reader.GetInt32(0);
+                            stats.AvatarCacheSize = reader.GetInt64(1);
+                        }
+                    }
                 }
+
+                // 获取数据库文件实际大小（而不是可用空间）
+                var fileInfo = new FileInfo(dbpath);
+                if (fileInfo.Exists)
+                {
+                    stats.DatabaseSize = fileInfo.Length;
+                }
+
+                Debug.WriteLine(
+                    $"获取数据库统计信息成功：消息 {stats.TotalMessages} 条，群组 {stats.TotalGroups} 个，好友 {stats.TotalFriends} 个，头像 {stats.TotalAvatars} 个");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"獲取數據庫統計信息錯誤：{ex.Message}");
+                Debug.WriteLine($"获取数据库统计信息錯誤：{ex.Message}");
             }
 
             return stats;
         }
+
 
         /// <summary>
         ///     獲取最近的聊天消息（用於展示）
