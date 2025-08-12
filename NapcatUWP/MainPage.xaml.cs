@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Core;
 using Windows.System.Threading;
@@ -46,8 +47,17 @@ namespace NapcatUWP
         {
             var asyncAction = ThreadPool.RunAsync(workItem =>
             {
-                DataAccess.InitializeDatabase();
-                DataAccess.InitInsert();
+                try
+                {
+                    DataAccess.InitializeDatabase();
+                    DataAccess.InitInsert();
+                    // 在應用初始化時升級數據庫結構
+                    DataAccess.UpgradeChatListCacheTable();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"數據庫初始化失敗: {ex.Message}");
+                }
             });
         }
 
@@ -139,27 +149,50 @@ namespace NapcatUWP
 
         private async Task WebSocketStart()
         {
-            DataAccess.UpdateSetting("Account", TextBoxAccount.Text);
-            DataAccess.UpdateSetting("Token", PasswordBoxToken.Password);
-            SocketClientStarter.WebSocketConnet(ConnectionAddr, PasswordBoxToken.Password);
-
-            // 减少等待时间，避免长时间卡住
-            for (var i = 0; i < 20; i++) // 从30秒减少到20秒
+            try
             {
-                await Task.Delay(1000);
-                if (SocketClientStarter.IsConnected)
-                {
-                    Progress_R.IsActive = false; // 确保关闭进度环
-                    Frame.Navigate(typeof(MainView));
-                    return;
-                }
-            }
+                DataAccess.UpdateSetting("Account", TextBoxAccount.Text);
+                DataAccess.UpdateSetting("Token", PasswordBoxToken.Password);
 
-            // 连接失败处理
-            Progress_R.IsActive = false;
+                // 添加連線前的檢查
+                Debug.WriteLine($"嘗試連線到: {ConnectionAddr}");
+                Debug.WriteLine(
+                    $"使用 Token: {PasswordBoxToken.Password.Substring(0, Math.Min(10, PasswordBoxToken.Password.Length))}...");
+
+                SocketClientStarter.WebSocketConnet(ConnectionAddr, PasswordBoxToken.Password);
+
+                // 改善等待邏輯
+                for (var i = 0; i < 30; i++)
+                {
+                    await Task.Delay(1000);
+                    if (SocketClientStarter.IsConnected)
+                    {
+                        Progress_R.IsActive = false;
+                        Frame.Navigate(typeof(MainView));
+                        return;
+                    }
+
+                    // 每5秒檢查一次連線狀態
+                    if (i % 5 == 0) Debug.WriteLine($"連線等待中... {i}/30 秒");
+                }
+
+                // 連接失敗處理
+                Progress_R.IsActive = false;
+                await ShowConnectionFailedDialog();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"WebSocket 連線發生異常: {ex.Message}");
+                Progress_R.IsActive = false;
+                await ShowConnectionFailedDialog();
+            }
+        }
+
+        private async Task ShowConnectionFailedDialog()
+        {
             var dialog = new ContentDialog
             {
-                Title = "Connected Failed",
+                Title = "連線失敗",
                 RequestedTheme = ElementTheme.Dark,
                 MaxWidth = ActualWidth
             };
@@ -167,11 +200,16 @@ namespace NapcatUWP
             var panel = new StackPanel();
             var textBlock = new TextBlock
             {
-                Text = "Connect to Server " + ConnectionAddr + " failed! Please check the connection and Token!"
+                Text = $"無法連線到伺服器 {ConnectionAddr}\n\n可能的原因：\n" +
+                       "• 伺服器未運行或地址不正確\n" +
+                       "• Token 無效\n" +
+                       "• 防火牆或網路設定問題\n" +
+                       "• 伺服器拒絕連線",
+                TextWrapping = TextWrapping.Wrap
             };
             panel.Children.Add(textBlock);
             dialog.Content = panel;
-            dialog.PrimaryButtonText = "OK";
+            dialog.PrimaryButtonText = "確定";
 
             await dialog.ShowAsync();
         }

@@ -64,6 +64,88 @@ namespace NapcatUWP.Tools
         }
 
         /// <summary>
+        ///     **兼容性方法** - 同步版本的ExecuteInTransaction，保持向后兼容
+        /// </summary>
+        public static void ExecuteInTransaction(Action<SqliteConnection> operation)
+        {
+            try
+            {
+                ExecuteAsync(db =>
+                {
+                    using (var transaction = db.BeginTransaction())
+                    {
+                        try
+                        {
+                            operation(db);
+                            transaction.Commit();
+                        }
+                        catch
+                        {
+                            transaction.Rollback();
+                            throw;
+                        }
+                    }
+                }).Wait();
+            }
+            catch (AggregateException ex)
+            {
+                // 解包聚合异常
+                throw ex.InnerException ?? ex;
+            }
+        }
+
+        /// <summary>
+        ///     **兼容性方法** - 同步版本的ExecuteQuery，保持向后兼容
+        /// </summary>
+        public static void ExecuteQuery(string query, params object[] parameters)
+        {
+            ExecuteQuery(query, null, parameters);
+        }
+
+        /// <summary>
+        ///     **兼容性方法** - 同步版本的ExecuteQuery with callback，保持向后兼容
+        /// </summary>
+        public static void ExecuteQuery(string query, object parameter, Action<SqliteDataReader> callback)
+        {
+            try
+            {
+                ExecuteReadAsync<object>(db =>
+                {
+                    using (var command = new SqliteCommand(query, db))
+                    {
+                        if (parameter != null)
+                            // 简单的参数处理 - 假设是单个参数
+                            command.Parameters.AddWithValue("@param", parameter);
+
+                        using (var reader = command.ExecuteReader())
+                        {
+                            while (reader.Read()) callback?.Invoke(reader);
+                        }
+                    }
+
+                    return null;
+                }).Wait();
+            }
+            catch (AggregateException ex)
+            {
+                // 解包聚合异常
+                throw ex.InnerException ?? ex;
+            }
+        }
+
+        /// <summary>
+        ///     **兼容性扩展方法** - 为SqliteConnection添加Execute扩展方法
+        /// </summary>
+        public static int Execute(this SqliteConnection connection, string sql, params object[] parameters)
+        {
+            using (var command = new SqliteCommand(sql, connection))
+            {
+                for (var i = 0; i < parameters.Length; i++) command.Parameters.AddWithValue($"@p{i}", parameters[i]);
+                return command.ExecuteNonQuery();
+            }
+        }
+
+        /// <summary>
         ///     带重试和优化的数据库操作执行 - UWP 15063 兼容版本
         /// </summary>
         private static async Task<T> ExecuteWithRetryAsync<T>(Func<SqliteConnection, T> operation, bool isWrite)

@@ -17,14 +17,16 @@
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{A5A43C5B-DE2A-4C0C-9213-0A381AF9435A};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
     <WindowsXamlEnableOverview>true</WindowsXamlEnableOverview>
-    <PackageCertificateKeyFile>NapcatUWP_TemporaryKey.pfx</PackageCertificateKeyFile>
-    <PackageCertificateThumbprint>1184E64C653765B8FEB27DC8E312DDE2FEB9D1E8</PackageCertificateThumbprint>
+    <PackageCertificateKeyFile>
+    </PackageCertificateKeyFile>
+    <PackageCertificateThumbprint>5A4816486CFC24C3A0A6F7D30BB4C533966D7ACF</PackageCertificateThumbprint>
     <GenerateAppInstallerFile>False</GenerateAppInstallerFile>
     <AppxAutoIncrementPackageRevision>True</AppxAutoIncrementPackageRevision>
     <AppxBundle>Always</AppxBundle>
     <AppxBundlePlatforms>x86|x64|arm</AppxBundlePlatforms>
     <AppInstallerUpdateFrequency>1</AppInstallerUpdateFrequency>
     <AppInstallerCheckForUpdateFrequency>OnApplicationRun</AppInstallerCheckForUpdateFrequency>
+    <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
     <DebugSymbols>true</DebugSymbols>
@@ -169,6 +171,8 @@
     <Compile Include="Tools\ActionBase.cs" />
     <Compile Include="Tools\AvatarManager.cs" />
     <Compile Include="Tools\ChatCreationHelper.cs" />
+    <Compile Include="Tools\ChatTypeCache.cs" />
+    <Compile Include="Tools\ConcurrentImageDownloader.cs" />
     <Compile Include="Tools\DatabaseManager.cs" />
     <Compile Include="Tools\JSONTools.cs" />
     <Compile Include="Tools\MessageSegmentParser.cs" />
@@ -291,6 +295,9 @@
       <Project>{673519cb-70a0-42e6-8129-c3ae9c5604f5}</Project>
       <Name>WebSocket.UAP</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="NapcatUWP_TemporaryKey.pfx" />
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">
     <VisualStudioVersion>14.0</VisualStudioVersion>

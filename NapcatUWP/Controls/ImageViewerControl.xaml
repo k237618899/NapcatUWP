@@ -8,12 +8,67 @@
     HorizontalAlignment="Stretch"
     VerticalAlignment="Stretch">
 
+    <UserControl.Resources>
+        <!-- 淡入動畫 -->
+        <Storyboard x:Name="FadeInStoryboard">
+            <DoubleAnimation Storyboard.TargetName="OverlayGrid"
+                            Storyboard.TargetProperty="Opacity"
+                            From="0" To="1" Duration="0:0:0.3">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetName="ImageTransform"
+                            Storyboard.TargetProperty="ScaleX"
+                            From="0.9" To="1.0" Duration="0:0:0.3">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetName="ImageTransform"
+                            Storyboard.TargetProperty="ScaleY"
+                            From="0.9" To="1.0" Duration="0:0:0.3">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
+
+        <!-- 淡出動畫 -->
+        <Storyboard x:Name="FadeOutStoryboard" Completed="FadeOutStoryboard_Completed">
+            <DoubleAnimation Storyboard.TargetName="OverlayGrid"
+                            Storyboard.TargetProperty="Opacity"
+                            To="0" Duration="0:0:0.2"/>
+            <DoubleAnimation Storyboard.TargetName="ImageTransform"
+                            Storyboard.TargetProperty="ScaleX"
+                            To="0.9" Duration="0:0:0.2"/>
+            <DoubleAnimation Storyboard.TargetName="ImageTransform"
+                            Storyboard.TargetProperty="ScaleY"
+                            To="0.9" Duration="0:0:0.2"/>
+        </Storyboard>
+
+        <!-- 控制面板淡入淡出動畫 -->
+        <Storyboard x:Name="ControlsFadeInStoryboard">
+            <DoubleAnimation Storyboard.TargetName="ControlsContainer"
+                            Storyboard.TargetProperty="Opacity"
+                            To="1" Duration="0:0:0.2"/>
+        </Storyboard>
+
+        <Storyboard x:Name="ControlsFadeOutStoryboard">
+            <DoubleAnimation Storyboard.TargetName="ControlsContainer"
+                            Storyboard.TargetProperty="Opacity"
+                            To="0" Duration="0:0:0.2"/>
+        </Storyboard>
+    </UserControl.Resources>
+
     <!-- 全屏背景覆蓋層 -->
     <Grid x:Name="OverlayGrid" 
           Background="#DD000000" 
           HorizontalAlignment="Stretch"
           VerticalAlignment="Stretch"
-          Tapped="OverlayGrid_Tapped">
+          Opacity="0"
+          Tapped="OverlayGrid_Tapped"
+          PointerMoved="OverlayGrid_PointerMoved">
 
         <!-- 圖片容器 -->
         <ScrollViewer x:Name="ImageScrollViewer"
@@ -22,103 +77,190 @@
                       HorizontalScrollMode="Enabled"
                       VerticalScrollMode="Enabled"
                       ZoomMode="Enabled"
-                      MinZoomFactor="0.5"
+                      MinZoomFactor="0.1"
                       MaxZoomFactor="5.0"
                       HorizontalAlignment="Stretch"
                       VerticalAlignment="Stretch"
+                      DoubleTapped="ImageScrollViewer_DoubleTapped"
+                      ViewChanged="ImageScrollViewer_ViewChanged"
                       Tapped="ImageScrollViewer_Tapped">
 
             <Image x:Name="DisplayImage" 
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
-                   Stretch="Uniform"/>
+                   Stretch="Uniform"
+                   ImageOpened="DisplayImage_ImageOpened"
+                   ImageFailed="DisplayImage_ImageFailed">
+                <Image.RenderTransform>
+                    <CompositeTransform x:Name="ImageTransform"/>
+                </Image.RenderTransform>
+            </Image>
         </ScrollViewer>
 
-        <!-- 關閉按鈕 -->
-        <Border Background="#80000000" 
-                Width="50" 
-                Height="50" 
-                HorizontalAlignment="Right" 
-                VerticalAlignment="Top"
-                Margin="20"
-                CornerRadius="25">
-            <Button x:Name="CloseButton" 
-                    Content="✕" 
-                    Background="Transparent" 
-                    Foreground="White" 
-                    FontSize="20" 
+        <!-- 控制面板容器 -->
+        <Grid x:Name="ControlsContainer" Opacity="1">
+            <!-- 關閉按鈕 -->
+            <Border Background="#99000000" 
                     Width="50" 
                     Height="50" 
-                    Click="CloseButton_Click"
-                    BorderThickness="0"/>
-        </Border>
+                    HorizontalAlignment="Right" 
+                    VerticalAlignment="Top"
+                    Margin="20">
+                <Button x:Name="CloseButton" 
+                        Content="✕" 
+                        Background="Transparent" 
+                        Foreground="White" 
+                        FontSize="20" 
+                        Width="50" 
+                        Height="50" 
+                        Click="CloseButton_Click"
+                        BorderThickness="0"
+                        ToolTipService.ToolTip="關閉 (Esc)"/>
+            </Border>
 
-        <!-- 縮放控制按鈕 -->
-        <Border Background="#80000000"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Bottom"
-                Margin="0,0,0,30"
-                Padding="10"
-                CornerRadius="20">
-            <StackPanel Orientation="Horizontal">
-                <Button x:Name="ZoomOutButton"
-                        Content="➖"
-                        Background="Transparent"
-                        Foreground="White"
-                        FontSize="16"
-                        Width="40"
-                        Height="40"
-                        Margin="5,0"
-                        Click="ZoomOutButton_Click"
-                        BorderThickness="0"/>
+            <!-- 縮放和控制按鈕 -->
+            <Border Background="#99000000"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,0,30"
+                    Padding="15,10"
+                    MaxWidth="400">
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="ZoomOutButton"
+                            Content="➖"
+                            Background="Transparent"
+                            Foreground="White"
+                            FontSize="16"
+                            Width="40"
+                            Height="40"
+                            Margin="5,0,5,0"
+                            Click="ZoomOutButton_Click"
+                            BorderThickness="0"
+                            ToolTipService.ToolTip="縮小"/>
 
-                <TextBlock x:Name="ZoomFactorText"
-                           Text="100%"
-                           Foreground="White"
-                           FontSize="14"
-                           VerticalAlignment="Center"
-                           Margin="10,0"/>
+                    <TextBlock x:Name="ZoomFactorText"
+                               Text="100%"
+                               Foreground="White"
+                               FontSize="14"
+                               VerticalAlignment="Center"
+                               MinWidth="50"
+                               TextAlignment="Center"
+                               Margin="10,0,10,0"/>
 
-                <Button x:Name="ZoomInButton"
-                        Content="➕"
-                        Background="Transparent"
-                        Foreground="White"
-                        FontSize="16"
-                        Width="40"
-                        Height="40"
-                        Margin="5,0"
-                        Click="ZoomInButton_Click"
-                        BorderThickness="0"/>
+                    <Button x:Name="ZoomInButton"
+                            Content="➕"
+                            Background="Transparent"
+                            Foreground="White"
+                            FontSize="16"
+                            Width="40"
+                            Height="40"
+                            Margin="5,0,5,0"
+                            Click="ZoomInButton_Click"
+                            BorderThickness="0"
+                            ToolTipService.ToolTip="放大"/>
 
-                <Button x:Name="ResetZoomButton"
-                        Content="🔍"
-                        Background="Transparent"
-                        Foreground="White"
-                        FontSize="16"
-                        Width="40"
-                        Height="40"
-                        Margin="5,0"
-                        Click="ResetZoomButton_Click"
-                        BorderThickness="0"/>
-            </StackPanel>
-        </Border>
+                    <Button x:Name="FitToWidthButton"
+                            Content="🗗"
+                            Background="Transparent"
+                            Foreground="White"
+                            FontSize="16"
+                            Width="40"
+                            Height="40"
+                            Margin="5,0,5,0"
+                            Click="FitToWidthButton_Click"
+                            BorderThickness="0"
+                            ToolTipService.ToolTip="適合寬度"/>
+
+                    <Button x:Name="FitToWindowButton"
+                            Content="🔍"
+                            Background="Transparent"
+                            Foreground="White"
+                            FontSize="16"
+                            Width="40"
+                            Height="40"
+                            Margin="5,0,5,0"
+                            Click="FitToWindowButton_Click"
+                            BorderThickness="0"
+                            ToolTipService.ToolTip="適合窗口"/>
+
+                    <Button x:Name="ActualSizeButton"
+                            Content="1:1"
+                            Background="Transparent"
+                            Foreground="White"
+                            FontSize="12"
+                            FontWeight="Bold"
+                            Width="40"
+                            Height="40"
+                            Margin="5,0,5,0"
+                            Click="ActualSizeButton_Click"
+                            BorderThickness="0"
+                            ToolTipService.ToolTip="實際大小"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 圖片資訊顯示 -->
+            <Border Background="#99000000"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Margin="20"
+                    Padding="15,8"
+                    x:Name="InfoPanel"
+                    Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="ImageSizeText"
+                               Foreground="White"
+                               FontSize="12"
+                               Text="1920 × 1080"/>
+                    <TextBlock x:Name="ImageFileSizeText"
+                               Foreground="#CCFFFFFF"
+                               FontSize="11"
+                               Text="2.5 MB"
+                               Margin="0,2,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
 
         <!-- 加載指示器 -->
-        <ProgressRing x:Name="LoadingRing" 
-                      IsActive="True" 
-                      Foreground="White" 
-                      Width="50" 
-                      Height="50" 
-                      HorizontalAlignment="Center" 
-                      VerticalAlignment="Center"/>
+        <StackPanel HorizontalAlignment="Center" 
+                   VerticalAlignment="Center"
+                   x:Name="LoadingPanel">
+            <ProgressRing x:Name="LoadingRing" 
+                          IsActive="True" 
+                          Foreground="White" 
+                          Width="60" 
+                          Height="60"/>
+            <TextBlock Text="載入圖片中..."
+                      Foreground="White"
+                      FontSize="14"
+                      HorizontalAlignment="Center"
+                      Margin="0,15,0,0"/>
+        </StackPanel>
 
         <!-- 錯誤信息 -->
-        <TextBlock x:Name="ErrorTextBlock" 
-                   Text="圖片加載失敗" 
-                   Foreground="Red" 
-                   FontSize="16" 
-                   HorizontalAlignment="Center" 
+        <StackPanel x:Name="ErrorPanel"
+                   HorizontalAlignment="Center"
                    VerticalAlignment="Center"
-                   Visibility="Collapsed"/>
+                   Visibility="Collapsed">
+            <TextBlock Text="⚠️"
+                      FontSize="48"
+                      HorizontalAlignment="Center"
+                      Foreground="#FFCC5555"
+                      Margin="0,0,0,10"/>
+            <TextBlock x:Name="ErrorTextBlock" 
+                       Text="圖片載入失敗" 
+                       Foreground="White" 
+                       FontSize="16" 
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="300"
+                       Margin="0,0,0,15"/>
+            <Button Content="重新載入"
+                   Click="RetryButton_Click"
+                   Background="#FF4CAF50"
+                   Foreground="White"
+                   BorderThickness="0"
+                   Padding="20,8"/>
+        </StackPanel>
     </Grid>
 </UserControl>

@@ -28,21 +28,6 @@ namespace NapcatUWP.Controls
     }
 
     /// <summary>
-    ///     圖片查看事件參數類
-    /// </summary>
-    public class ImageViewEventArgs : EventArgs
-    {
-        public ImageViewEventArgs(string imageUrl, string title = "圖片查看")
-        {
-            ImageUrl = imageUrl;
-            Title = title;
-        }
-
-        public string ImageUrl { get; }
-        public string Title { get; }
-    }
-
-    /// <summary>
     ///     音頻播放事件參數類
     /// </summary>
     public class AudioPlayRequestEventArgs : EventArgs
@@ -267,10 +252,13 @@ namespace NapcatUWP.Controls
                 try
                 {
                     var imageUrl = segment?.Url;
+                    var fileId = segment?.File; // 獲取文件ID
+
                     if (!string.IsNullOrEmpty(imageUrl))
                     {
-                        Debug.WriteLine($"MessageSegmentControl: 請求查看圖片 - URL: {imageUrl}");
-                        ImageViewRequested?.Invoke(this, new ImageViewEventArgs(imageUrl));
+                        Debug.WriteLine($"MessageSegmentControl: 請求查看圖片 - URL: {imageUrl}, FileID: {fileId}");
+                        // 傳遞文件ID用於重試
+                        ImageViewRequested?.Invoke(this, new ImageViewEventArgs(imageUrl, fileId));
                     }
                     else
                     {
@@ -282,7 +270,6 @@ namespace NapcatUWP.Controls
                     Debug.WriteLine($"MessageSegmentControl: 處理圖片點擊時發生錯誤: {ex.Message}");
                 }
             };
-
             // 添加指針進入和離開事件來模擬 cursor 效果
             border.PointerEntered += (sender, e) =>
             {

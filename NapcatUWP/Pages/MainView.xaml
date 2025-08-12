@@ -193,10 +193,28 @@
             <Grid Grid.Column="0" Background="#FF2D3E50">
                 <StackPanel>
                     <StackPanel Margin="8,32,0,16" Orientation="Horizontal">
-                        <Ellipse
-                            Width="40"
-                            Height="40"
-                            Fill="LightBlue" />
+                        <!-- 修改原有的 Ellipse 為支持圖片的版本 -->
+                        <Grid Width="40" Height="40">
+                            <!-- 預設頭像背景 -->
+                            <Ellipse x:Name="DefaultUserAvatar"
+                                     Fill="LightBlue" />
+
+                            <!-- 真實用戶頭像 -->
+                            <Ellipse x:Name="UserAvatarEllipse"
+                                     Visibility="Collapsed">
+                                <Ellipse.Fill>
+                                    <ImageBrush x:Name="UserAvatarBrush" 
+                                                Stretch="UniformToFill"/>
+                                </Ellipse.Fill>
+                            </Ellipse>
+
+                            <!-- 載入指示器 -->
+                            <ProgressRing x:Name="UserAvatarLoadingRing"
+                                          Width="20" Height="20"
+                                          Visibility="Collapsed"
+                                          Foreground="White"/>
+                        </Grid>
+
                         <StackPanel Margin="8,0,0,0" Visibility="{Binding ElementName=SidebarColumn, Path=Width.Value, Converter={StaticResource SidebarWidthToVisibilityConverter}}">
                             <TextBlock
                                 x:Name="TextUser"
@@ -704,7 +722,96 @@
                                             Click="RefreshStatsButton_Click" />
                                     </StackPanel>
                                 </Border>
+                                <!-- 頭像隊列狀態卡片 - 新增 -->
+                                <Border
+    Background="#FF2D3E50"
+    CornerRadius="8"
+    Margin="0,0,0,20"
+    Padding="20">
+                                    <StackPanel>
+                                        <TextBlock
+            FontSize="16"
+            FontWeight="Bold"
+            Foreground="White"
+            Margin="0,0,0,15"
+            Text="頭像載入狀態" />
 
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- 左列 -->
+                                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                        Text="隊列中: "
+                        Foreground="LightGray"
+                        FontSize="14" />
+                                                    <TextBlock
+                        x:Name="AvatarQueueCountText"
+                        Text="0"
+                        Foreground="White"
+                        FontSize="14"
+                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                        Text="載入狀態: "
+                        Foreground="LightGray"
+                        FontSize="14" />
+                                                    <TextBlock
+                        x:Name="AvatarLoadingStatusText"
+                        Text="閒置"
+                        Foreground="Green"
+                        FontSize="14"
+                        FontWeight="Bold" />
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <!-- 右列 -->
+                                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                        Text="未緩存: "
+                        Foreground="LightGray"
+                        FontSize="14" />
+                                                    <TextBlock
+                        x:Name="UncachedAvatarsText"
+                        Text="0"
+                        Foreground="Orange"
+                        FontSize="14"
+                        FontWeight="Bold" />
+                                                </StackPanel>
+
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <TextBlock
+                        Text="成功率: "
+                        Foreground="LightGray"
+                        FontSize="14" />
+                                                    <TextBlock
+                        x:Name="AvatarSuccessRateText"
+                        Text="100%"
+                        Foreground="Green"
+                        FontSize="14"
+                        FontWeight="Bold" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <!-- 刷新狀態按鈕 -->
+                                        <Button
+            x:Name="RefreshAvatarStatusButton"
+            Content="刷新頭像狀態"
+            Background="#FF007ACC"
+            Foreground="White"
+            HorizontalAlignment="Center"
+            Margin="0,15,0,0"
+            Click="RefreshAvatarStatusButton_Click" />
+                                    </StackPanel>
+                                </Border>
                                 <!-- 危險操作卡片 -->
                                 <Border
                                     Background="#FF8B0000"

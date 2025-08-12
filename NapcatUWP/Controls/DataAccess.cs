@@ -4,13 +4,15 @@ using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using Windows.ApplicationModel.Core;
 using Windows.Storage;
+using Windows.UI.Core;
 using Microsoft.Data.Sqlite;
 using NapcatUWP.Models;
 using NapcatUWP.Tools;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Threading.Tasks;
 
 namespace NapcatUWP.Controls
 {
@@ -202,25 +204,31 @@ namespace NapcatUWP.Controls
             ON Messages(ChatId, IsGroup, Timestamp)", db);
                 createMessageIndexCmd.ExecuteNonQuery();
 
-                // 創建聊天列表緩存表
+                // 在 InitializeDatabase 方法的聊天列表緩存表創建部分，修改為：
                 var createChatListCacheTable = @"
-                CREATE TABLE IF NOT EXISTS ChatListCache (
-                    CacheId INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Account TEXT NOT NULL,
-                    ChatId INTEGER NOT NULL,
-                    ChatName TEXT NOT NULL,
-                    LastMessage TEXT,
-                    LastTime TEXT,
-                    UnreadCount INTEGER DEFAULT 0,
-                    AvatarColor TEXT,
-                    IsGroup INTEGER NOT NULL,
-                    MemberCount INTEGER DEFAULT 0,
-                    LastUpdated TEXT NOT NULL,
-                    UNIQUE(Account, ChatId, IsGroup)
-                )";
+    CREATE TABLE IF NOT EXISTS ChatListCache (
+        CacheId INTEGER PRIMARY KEY AUTOINCREMENT,
+        Account TEXT NOT NULL,
+        ChatId INTEGER NOT NULL,
+        ChatName TEXT NOT NULL,
+        LastMessage TEXT,
+        LastTime TEXT,
+        UnreadCount INTEGER DEFAULT 0,
+        AvatarColor TEXT,
+        IsGroup INTEGER NOT NULL,
+        MemberCount INTEGER DEFAULT 0,
+        LastUpdated TEXT NOT NULL,
+        AvatarCacheKey TEXT,
+        AvatarLocalPath TEXT,
+        AvatarLastUpdated TEXT,
+        UNIQUE(Account, ChatId, IsGroup)
+    )";
 
                 var createChatListCacheTableCmd = new SqliteCommand(createChatListCacheTable, db);
                 createChatListCacheTableCmd.ExecuteNonQuery();
+
+                // 對於現有數據庫，執行升級
+                UpgradeChatListCacheTable();
 
                 // 創建頭像緩存表
                 var createAvatarCacheTable = @"
@@ -243,6 +251,10 @@ namespace NapcatUWP.Controls
                 CREATE INDEX IF NOT EXISTS idx_avatar_cache_type_id 
                 ON AvatarCache(AvatarType, UserId, GroupId)", db);
                 createAvatarCacheIndexCmd.ExecuteNonQuery();
+                // 升級表結構以支援頭像緩存
+                UpgradeFriendsTableForAvatarCache();
+                UpgradeGroupsTableForAvatarCache();
+                UpgradeChatListCacheTable();
 
                 // 在 InitializeDatabase 方法的最後添加
                 FixDatabaseTimestamps();
@@ -316,8 +328,168 @@ namespace NapcatUWP.Controls
 
         #region 头像管理辅助方法
 
+        public static void SmartSaveChatListCacheThreadSafe(string accountId, List<ChatItem> chatItems)
+        {
+            if (string.IsNullOrEmpty(accountId) || chatItems == null || chatItems.Count == 0)
+                return;
+
+            try
+            {
+                Debug.WriteLine($"线程安全保存聊天列表缓存（包含頭像）: {chatItems.Count} 个项目");
+
+                DatabaseManager.ExecuteInTransaction(db =>
+                {
+                    // 清除旧的聊天列表缓存
+                    db.Execute("DELETE FROM ChatListCache WHERE Account = ?", accountId);
+
+                    // 批量插入新的聊天项目
+                    var insertCommand = @"
+                INSERT OR REPLACE INTO ChatListCache 
+                (Account, ChatId, IsGroup, Name, LastMessage, LastTime, UnreadCount, 
+                 AvatarColor, MemberCount, HasAvatar, AvatarCacheKey, CachedTime) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+                    foreach (var item in chatItems)
+                        try
+                        {
+                            var avatarType = item.IsGroup ? "group" : "friend";
+                            var avatarCacheKey = $"{avatarType}_{item.ChatId}";
+                            var hasAvatar = item.AvatarImage != null;
+
+                            db.Execute(insertCommand,
+                                accountId,
+                                item.ChatId,
+                                item.IsGroup ? 1 : 0,
+                                item.Name ?? "",
+                                item.LastMessage ?? "",
+                                item.LastTime ?? "",
+                                item.UnreadCount,
+                                item.AvatarColor ?? "",
+                                item.MemberCount,
+                                hasAvatar ? 1 : 0, // 保存头像状态
+                                avatarCacheKey, // 保存头像缓存键
+                                DateTimeOffset.Now.ToUnixTimeSeconds()
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"保存聊天项目时发生错误: {item?.Name}, {ex.Message}");
+                        }
+                });
+
+                Debug.WriteLine("线程安全保存聊天列表缓存完成");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"线程安全保存聊天列表缓存失败: {ex.Message}");
+            }
+        }
+
+
         /// <summary>
-        /// 预加载聊天列表头像
+        ///     载入聊天列表缓存（包含头像状态）- 修复 UWP 15063 兼容性
+        /// </summary>
+        public static List<ChatItem> LoadChatListCacheWithAvatarState(string accountId)
+        {
+            var result = new List<ChatItem>();
+
+            if (string.IsNullOrEmpty(accountId))
+                return result;
+
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    var selectCommand = new SqliteCommand(@"
+                SELECT ChatId, IsGroup, Name, LastMessage, LastTime, UnreadCount, 
+                       AvatarColor, MemberCount, HasAvatar, AvatarCacheKey
+                FROM ChatListCache 
+                WHERE Account = @account 
+                ORDER BY CachedTime DESC", db);
+                    selectCommand.Parameters.AddWithValue("@account", accountId);
+
+                    using (var reader = selectCommand.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var chatItem = new ChatItem
+                            {
+                                // 修复：使用 Convert 方法而不是直接的 Get 方法，兼容 UWP 15063
+                                ChatId = Convert.ToInt64(reader["ChatId"]),
+                                IsGroup = Convert.ToInt32(reader["IsGroup"]) == 1,
+                                Name = reader.IsDBNull(reader.GetOrdinal("Name"))
+                                    ? ""
+                                    : Convert.ToString(reader["Name"]),
+                                LastMessage = reader.IsDBNull(reader.GetOrdinal("LastMessage"))
+                                    ? ""
+                                    : Convert.ToString(reader["LastMessage"]),
+                                LastTime = reader.IsDBNull(reader.GetOrdinal("LastTime"))
+                                    ? ""
+                                    : Convert.ToString(reader["LastTime"]),
+                                UnreadCount = Convert.ToInt32(reader["UnreadCount"]),
+                                AvatarColor = reader.IsDBNull(reader.GetOrdinal("AvatarColor"))
+                                    ? ""
+                                    : Convert.ToString(reader["AvatarColor"]),
+                                MemberCount = Convert.ToInt32(reader["MemberCount"])
+                            };
+
+                            // **恢复头像状态** - 修复类型转换
+                            var hasAvatar = Convert.ToInt32(reader["HasAvatar"]) == 1;
+                            var avatarCacheKey = reader.IsDBNull(reader.GetOrdinal("AvatarCacheKey"))
+                                ? ""
+                                : Convert.ToString(reader["AvatarCacheKey"]);
+
+                            if (hasAvatar && !string.IsNullOrEmpty(avatarCacheKey))
+                                // 异步加载已缓存的头像
+                                _ = Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        var avatarType = chatItem.IsGroup ? "group" : "friend";
+                                        var avatar =
+                                            await AvatarManager.GetAvatarAsync(avatarType, chatItem.ChatId, 2, true);
+
+                                        if (avatar != null)
+                                            await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                                                CoreDispatcherPriority.High, () =>
+                                                {
+                                                    try
+                                                    {
+                                                        chatItem.AvatarImage = avatar;
+                                                        Debug.WriteLine($"✅ 恢复缓存头像: {avatarCacheKey}");
+                                                    }
+                                                    catch (Exception ex)
+                                                    {
+                                                        Debug.WriteLine($"恢复缓存头像失败: {avatarCacheKey}, {ex.Message}");
+                                                    }
+                                                });
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.WriteLine($"加载缓存头像失败: {avatarCacheKey}, {ex.Message}");
+                                    }
+                                });
+
+                            result.Add(chatItem);
+                        }
+                    }
+                }
+
+                Debug.WriteLine($"载入聊天列表缓存（包含头像状态）: {result.Count} 个项目");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"载入聊天列表缓存失败: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        ///     预加载聊天列表头像
         /// </summary>
         /// <param name="chatItems">聊天列表项目</param>
         public static async Task PreloadChatListAvatarsAsync(IEnumerable<ChatItem> chatItems)
@@ -328,24 +500,16 @@ namespace NapcatUWP.Controls
                 var groupIds = new List<long>();
 
                 foreach (var chatItem in chatItems)
-                {
                     if (chatItem.IsGroup)
                         groupIds.Add(chatItem.ChatId);
                     else
                         friendIds.Add(chatItem.ChatId);
-                }
 
                 // 预加载好友头像
-                if (friendIds.Count > 0)
-                {
-                    await AvatarManager.PreloadFriendAvatarsAsync(friendIds);
-                }
+                if (friendIds.Count > 0) await AvatarManager.PreloadFriendAvatarsAsync(friendIds);
 
                 // 预加载群组头像
-                if (groupIds.Count > 0)
-                {
-                    await AvatarManager.PreloadGroupAvatarsAsync(groupIds);
-                }
+                if (groupIds.Count > 0) await AvatarManager.PreloadGroupAvatarsAsync(groupIds);
 
                 Debug.WriteLine($"聊天列表头像预加载完成：{friendIds.Count} 个好友，{groupIds.Count} 个群组");
             }
@@ -356,7 +520,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 获取用户头像URL
+        ///     获取用户头像URL
         /// </summary>
         /// <param name="userId">用户ID</param>
         /// <param name="isCurrentUser">是否为当前用户</param>
@@ -369,7 +533,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 获取群组头像URL
+        ///     获取群组头像URL
         /// </summary>
         /// <param name="groupId">群组ID</param>
         /// <returns>头像URL</returns>
@@ -764,7 +928,7 @@ namespace NapcatUWP.Controls
         #region 根據ID查找名稱的輔助方法
 
         /// <summary>
-        /// 增強版群組名稱獲取 - 修復聊天列表顯示問題
+        ///     增強版群組名稱獲取 - 修復聊天列表顯示問題
         /// </summary>
         public static string GetGroupNameById(long groupId)
         {
@@ -810,10 +974,8 @@ namespace NapcatUWP.Controls
 
                     var senderResult = messageCommand.ExecuteScalar();
                     if (senderResult != null)
-                    {
                         // 從最近的消息記錄中提取可能的群組信息
                         Debug.WriteLine($"從消息記錄中找到群組相關信息: {senderResult}");
-                    }
                 }
             }
             catch (Exception ex)
@@ -1283,110 +1445,166 @@ namespace NapcatUWP.Controls
         #region 聊天列表緩存操作
 
         /// <summary>
-        ///     保存聊天列表緩存
+        ///     擴展 ChatListCache 表以支持頭像緩存關聯 - 修復合併後頭像丟失問題
         /// </summary>
-        /// <param name="account">當前登入的帳號</param>
-        /// <param name="chatItems">聊天列表項目</param>
-        public static void SaveChatListCache(string account, IEnumerable<ChatItem> chatItems)
+        public static void UpgradeChatListCacheTable()
         {
             try
             {
-                if (string.IsNullOrEmpty(account) || chatItems == null)
-                {
-                    Debug.WriteLine("保存聊天列表緩存: 參數無效");
-                    return;
-                }
+                Debug.WriteLine("開始升級 ChatListCache 表以支持頭像緩存關聯");
 
                 var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
                 using (var db = new SqliteConnection($"Filename={dbpath}"))
                 {
                     db.Open();
 
-                    using (var transaction = db.BeginTransaction())
+                    // 檢查並添加 AvatarCacheKey 列
+                    try
                     {
-                        try
-                        {
-                            // 刪除該帳號的舊緩存
-                            var deleteCommand = new SqliteCommand("DELETE FROM ChatListCache WHERE Account = @account",
-                                db, transaction);
-                            deleteCommand.Parameters.AddWithValue("@account", account);
-                            var deletedCount = deleteCommand.ExecuteNonQuery();
-                            Debug.WriteLine($"刪除帳號 {account} 的舊緩存: {deletedCount} 條記錄");
-
-                            // 插入新的緩存
-                            var insertCommand = new SqliteCommand(@"
-                                INSERT OR REPLACE INTO ChatListCache 
-                                (Account, ChatId, ChatName, LastMessage, LastTime, UnreadCount, AvatarColor, IsGroup, MemberCount, LastUpdated) 
-                                VALUES (@account, @chatId, @chatName, @lastMessage, @lastTime, @unreadCount, @avatarColor, @isGroup, @memberCount, @lastUpdated)",
-                                db, transaction);
-
-                            var savedCount = 0;
-                            foreach (var chatItem in chatItems)
-                            {
-                                insertCommand.Parameters.Clear();
-                                insertCommand.Parameters.AddWithValue("@account", account);
-                                insertCommand.Parameters.AddWithValue("@chatId", chatItem.ChatId);
-                                insertCommand.Parameters.AddWithValue("@chatName", chatItem.Name ?? "");
-                                insertCommand.Parameters.AddWithValue("@lastMessage", chatItem.LastMessage ?? "");
-                                insertCommand.Parameters.AddWithValue("@lastTime", chatItem.LastTime ?? "");
-                                insertCommand.Parameters.AddWithValue("@unreadCount", chatItem.UnreadCount);
-                                insertCommand.Parameters.AddWithValue("@avatarColor", chatItem.AvatarColor ?? "");
-                                insertCommand.Parameters.AddWithValue("@isGroup", chatItem.IsGroup ? 1 : 0);
-                                insertCommand.Parameters.AddWithValue("@memberCount", chatItem.MemberCount);
-                                insertCommand.Parameters.AddWithValue("@lastUpdated",
-                                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-
-                                insertCommand.ExecuteNonQuery();
-                                savedCount++;
-                            }
-
-                            transaction.Commit();
-                            Debug.WriteLine($"成功保存帳號 {account} 的聊天列表緩存: {savedCount} 個聊天項目");
-                        }
-                        catch (Exception transactionEx)
-                        {
-                            transaction.Rollback();
-                            Debug.WriteLine($"保存聊天列表緩存事務錯誤: {transactionEx.Message}");
-                            throw;
-                        }
+                        var addAvatarCacheKeyCmd = new SqliteCommand(@"
+                    ALTER TABLE ChatListCache ADD COLUMN AvatarCacheKey TEXT", db);
+                        addAvatarCacheKeyCmd.ExecuteNonQuery();
+                        Debug.WriteLine("成功添加 AvatarCacheKey 列到 ChatListCache 表");
                     }
+                    catch (SqliteException ex)
+                    {
+                        if (ex.Message.Contains("duplicate column name"))
+                            Debug.WriteLine("AvatarCacheKey 列已存在");
+                        else
+                            Debug.WriteLine($"添加 AvatarCacheKey 列時發生錯誤: {ex.Message}");
+                    }
+
+                    // 檢查並添加 AvatarLocalPath 列
+                    try
+                    {
+                        var addAvatarLocalPathCmd = new SqliteCommand(@"
+                    ALTER TABLE ChatListCache ADD COLUMN AvatarLocalPath TEXT", db);
+                        addAvatarLocalPathCmd.ExecuteNonQuery();
+                        Debug.WriteLine("成功添加 AvatarLocalPath 列到 ChatListCache 表");
+                    }
+                    catch (SqliteException ex)
+                    {
+                        if (ex.Message.Contains("duplicate column name"))
+                            Debug.WriteLine("AvatarLocalPath 列已存在");
+                        else
+                            Debug.WriteLine($"添加 AvatarLocalPath 列時發生錯誤: {ex.Message}");
+                    }
+
+                    // 檢查並添加 AvatarLastUpdated 列
+                    try
+                    {
+                        var addAvatarLastUpdatedCmd = new SqliteCommand(@"
+                    ALTER TABLE ChatListCache ADD COLUMN AvatarLastUpdated TEXT", db);
+                        addAvatarLastUpdatedCmd.ExecuteNonQuery();
+                        Debug.WriteLine("成功添加 AvatarLastUpdated 列到 ChatListCache 表");
+                    }
+                    catch (SqliteException ex)
+                    {
+                        if (ex.Message.Contains("duplicate column name"))
+                            Debug.WriteLine("AvatarLastUpdated 列已存在");
+                        else
+                            Debug.WriteLine($"添加 AvatarLastUpdated 列時發生錯誤: {ex.Message}");
+                    }
+
+                    // 為現有記錄填充頭像緩存鍵
+                    PopulateExistingChatListAvatarKeys(db);
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"保存聊天列表緩存錯誤: {ex.Message}");
+                Debug.WriteLine($"升級 ChatListCache 表時發生錯誤: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 智能保存聊天列表緩存 - 避免界面閃爍
+        ///     為現有的聊天列表記錄填充頭像緩存鍵
         /// </summary>
-        public static void SaveChatListCacheSmart(string account, IEnumerable<ChatItem> chatItems)
+        private static void PopulateExistingChatListAvatarKeys(SqliteConnection db)
         {
             try
             {
-                if (string.IsNullOrEmpty(account) || chatItems == null)
-                    return;
-
-                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
-                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                using (var transaction = db.BeginTransaction())
                 {
-                    db.Open();
+                    // 獲取所有沒有頭像緩存鍵的記錄
+                    var selectCmd = new SqliteCommand(@"
+                SELECT CacheId, ChatId, IsGroup, AvatarCacheKey 
+                FROM ChatListCache 
+                WHERE AvatarCacheKey IS NULL OR AvatarCacheKey = ''", db, transaction);
 
+                    var itemsToUpdate = new List<(int CacheId, long ChatId, bool IsGroup)>();
+
+                    using (var reader = selectCmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                            itemsToUpdate.Add((
+                                Convert.ToInt32(reader["CacheId"]),
+                                Convert.ToInt64(reader["ChatId"]),
+                                Convert.ToInt32(reader["IsGroup"]) == 1
+                            ));
+                    }
+
+                    // 更新每個記錄的頭像緩存鍵
+                    var updateCmd = new SqliteCommand(@"
+                UPDATE ChatListCache 
+                SET AvatarCacheKey = @avatarCacheKey 
+                WHERE CacheId = @cacheId", db, transaction);
+
+                    var updatedCount = 0;
+                    foreach (var (cacheId, chatId, isGroup) in itemsToUpdate)
+                    {
+                        var avatarType = isGroup ? "group" : "friend";
+                        var avatarCacheKey = $"{avatarType}_{chatId}";
+
+                        updateCmd.Parameters.Clear();
+                        updateCmd.Parameters.AddWithValue("@avatarCacheKey", avatarCacheKey);
+                        updateCmd.Parameters.AddWithValue("@cacheId", cacheId);
+
+                        var result = updateCmd.ExecuteNonQuery();
+                        if (result > 0) updatedCount++;
+                    }
+
+                    transaction.Commit();
+                    Debug.WriteLine($"成功為 {updatedCount} 個聊天列表項目填充頭像緩存鍵");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"填充頭像緩存鍵時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     修復版智能保存聊天列表緩存 - 使用 DatabaseManager
+        /// </summary>
+        public static void SaveChatListCacheWithAvatars(string account, IEnumerable<ChatItem> chatItems)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(account) || chatItems == null) return;
+
+                _ = DatabaseManager.ExecuteWriteAsync(db =>
+                {
                     using (var transaction = db.BeginTransaction())
                     {
                         try
                         {
-                            // 使用 INSERT OR REPLACE 而不是先DELETE再INSERT
                             var upsertCommand = new SqliteCommand(@"
                         INSERT OR REPLACE INTO ChatListCache 
-                        (Account, ChatId, ChatName, LastMessage, LastTime, UnreadCount, AvatarColor, IsGroup, MemberCount, LastUpdated) 
-                        VALUES (@account, @chatId, @chatName, @lastMessage, @lastTime, @unreadCount, @avatarColor, @isGroup, @memberCount, @lastUpdated)",
+                        (Account, ChatId, ChatName, LastMessage, LastTime, UnreadCount, AvatarColor, IsGroup, MemberCount, LastUpdated, AvatarCacheKey, AvatarLocalPath, AvatarLastUpdated) 
+                        VALUES (@account, @chatId, @chatName, @lastMessage, @lastTime, @unreadCount, @avatarColor, @isGroup, @memberCount, @lastUpdated, @avatarCacheKey, @avatarLocalPath, @avatarLastUpdated)",
                                 db, transaction);
 
                             var savedCount = 0;
                             foreach (var chatItem in chatItems)
                             {
+                                var avatarType = chatItem.IsGroup ? "group" : "friend";
+                                var avatarCacheKey = $"{avatarType}_{chatItem.ChatId}";
+
+                                // 使用獨立查詢獲取頭像信息，避免嵌套事務
+                                var avatarCache = GetAvatarCacheInfo(avatarCacheKey);
+                                var avatarLocalPath = avatarCache?.LocalPath ?? "";
+                                var avatarLastUpdated = avatarCache?.LastUpdated ?? "";
+
                                 upsertCommand.Parameters.Clear();
                                 upsertCommand.Parameters.AddWithValue("@account", account);
                                 upsertCommand.Parameters.AddWithValue("@chatId", chatItem.ChatId);
@@ -1399,34 +1617,555 @@ namespace NapcatUWP.Controls
                                 upsertCommand.Parameters.AddWithValue("@memberCount", chatItem.MemberCount);
                                 upsertCommand.Parameters.AddWithValue("@lastUpdated",
                                     DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                                upsertCommand.Parameters.AddWithValue("@avatarCacheKey", avatarCacheKey);
+                                upsertCommand.Parameters.AddWithValue("@avatarLocalPath", avatarLocalPath);
+                                upsertCommand.Parameters.AddWithValue("@avatarLastUpdated", avatarLastUpdated);
 
                                 upsertCommand.ExecuteNonQuery();
                                 savedCount++;
                             }
 
-                            // 清理不再存在的聊天（可選，定期執行而非每次都執行）
-                            var currentTime = DateTime.Now;
-                            if (currentTime.Hour == 0 && currentTime.Minute < 5) // 每天凌晨執行一次清理
+                            transaction.Commit();
+                            Debug.WriteLine($"智能保存聊天列表緩存完成: {savedCount} 個項目");
+                            return savedCount;
+                        }
+                        catch (Exception ex)
+                        {
+                            transaction.Rollback();
+                            Debug.WriteLine($"保存聊天列表緩存事務錯誤: {ex.Message}");
+                            throw;
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"保存聊天列表緩存錯誤: {ex.Message}");
+            }
+        }
+
+
+        /// <summary>
+        ///     從 ImageCache 表查詢頭像緩存信息 - 修復事務問題
+        /// </summary>
+        private static AvatarCacheInfo GetAvatarCacheInfoFromImageCache(SqliteConnection db, string cacheKey,
+            SqliteTransaction transaction = null)
+        {
+            try
+            {
+                var selectCommand = new SqliteCommand(@"
+            SELECT LocalPath, LastUpdated 
+            FROM ImageCache 
+            WHERE CacheKey = @cacheKey", db, transaction);
+                selectCommand.Parameters.AddWithValue("@cacheKey", cacheKey);
+
+                using (var reader = selectCommand.ExecuteReader())
+                {
+                    if (reader.Read())
+                        return new AvatarCacheInfo
+                        {
+                            LocalPath = reader["LocalPath"]?.ToString() ?? "",
+                            LastUpdated = reader["LastUpdated"]?.ToString() ?? ""
+                        };
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"從 ImageCache 查詢頭像緩存信息錯誤: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        ///     修復版獲取頭像緩存信息 - 避免事務衝突
+        /// </summary>
+        public static AvatarCacheInfo GetAvatarCacheInfo(string cacheKey)
+        {
+            try
+            {
+                return DatabaseManager.ExecuteReadAsync(db =>
+                {
+                    var selectCommand = new SqliteCommand(@"
+                SELECT LocalPath, LastUpdated 
+                FROM ImageCache 
+                WHERE CacheKey = @cacheKey", db);
+                    selectCommand.Parameters.AddWithValue("@cacheKey", cacheKey);
+
+                    using (var reader = selectCommand.ExecuteReader())
+                    {
+                        if (reader.Read())
+                            return new AvatarCacheInfo
                             {
-                                var cleanupCommand = new SqliteCommand(@"
-                            DELETE FROM ChatListCache 
-                            WHERE Account = @account 
-                            AND LastUpdated < datetime('now', '-7 days')", db, transaction);
-                                cleanupCommand.Parameters.AddWithValue("@account", account);
-                                var cleanedCount = cleanupCommand.ExecuteNonQuery();
-                                if (cleanedCount > 0)
+                                LocalPath = reader["LocalPath"]?.ToString() ?? "",
+                                LastUpdated = reader["LastUpdated"]?.ToString() ?? ""
+                            };
+                    }
+
+                    return null;
+                }).Result;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"獲取頭像緩存信息錯誤: {ex.Message}");
+                return null;
+            }
+        }
+
+
+        /// <summary>
+        ///     改進版載入聊天列表緩存 - 修復事務問題
+        /// </summary>
+        public static List<ChatItem> LoadChatListCacheWithAvatars(string account)
+        {
+            var chatItems = new List<ChatItem>();
+
+            try
+            {
+                if (string.IsNullOrEmpty(account))
+                {
+                    Debug.WriteLine("載入聊天列表緩存: 帳號參數無效");
+                    return chatItems;
+                }
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    // 修復：使用 LEFT JOIN 正確關聯 ImageCache 表，不使用事務
+                    var selectCommand = new SqliteCommand(@"
+                SELECT c.*, i.LocalPath as CachedAvatarPath, i.LastUpdated as AvatarCacheTime
+                FROM ChatListCache c 
+                LEFT JOIN ImageCache i ON c.AvatarCacheKey = i.CacheKey 
+                WHERE c.Account = @account 
+                ORDER BY c.LastUpdated DESC", db);
+                    selectCommand.Parameters.AddWithValue("@account", account);
+
+                    using (var query = selectCommand.ExecuteReader())
+                    {
+                        while (query.Read())
+                        {
+                            var chatId = Convert.ToInt64(query["ChatId"]);
+                            var isGroup = Convert.ToInt32(query["IsGroup"]) == 1;
+                            var cachedName = Convert.ToString(query["ChatName"]) ?? "";
+                            var avatarCacheKey = Convert.ToString(query["AvatarCacheKey"]) ?? "";
+
+                            // 修復：從正確的欄位讀取頭像路徑
+                            var cachedAvatarPath = query.IsDBNull(query.GetOrdinal("CachedAvatarPath"))
+                                ? ""
+                                : Convert.ToString(query["CachedAvatarPath"]);
+
+                            // 動態獲取最新的名稱信息
+                            string actualName;
+                            if (isGroup)
+                            {
+                                actualName = GetGroupNameById(chatId);
+                            }
+                            else
+                            {
+                                actualName = GetFriendNameById(chatId);
+                                if (actualName.StartsWith("用戶 ") && !string.IsNullOrEmpty(cachedName) &&
+                                    !cachedName.StartsWith("用戶 ")) actualName = cachedName;
+                            }
+
+                            var chatItem = new ChatItem
+                            {
+                                ChatId = chatId,
+                                Name = actualName,
+                                LastMessage = Convert.ToString(query["LastMessage"]) ?? "",
+                                LastTime = Convert.ToString(query["LastTime"]) ?? "",
+                                UnreadCount = Convert.ToInt32(query["UnreadCount"]),
+                                AvatarColor = Convert.ToString(query["AvatarColor"]) ?? "#FF4A90E2",
+                                IsGroup = isGroup,
+                                MemberCount = Convert.ToInt32(query["MemberCount"])
+                            };
+
+                            // 修復：如果有緩存的頭像路徑，異步載入
+                            if (!string.IsNullOrEmpty(cachedAvatarPath) && File.Exists(cachedAvatarPath))
+                            {
+                                Debug.WriteLine($"找到緩存頭像: {avatarCacheKey} -> {cachedAvatarPath}");
+
+                                // 異步載入頭像，避免阻塞UI
+                                _ = Task.Run(async () =>
                                 {
-                                    Debug.WriteLine($"清理過期聊天緩存: {cleanedCount} 條記錄");
+                                    try
+                                    {
+                                        var avatar = await AvatarManager.LoadImageFromFileAsync(cachedAvatarPath);
+                                        if (avatar != null)
+                                            await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(
+                                                CoreDispatcherPriority.Normal, () =>
+                                                {
+                                                    chatItem.AvatarImage = avatar;
+                                                    Debug.WriteLine($"預載入頭像成功: {avatarCacheKey}");
+                                                });
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.WriteLine($"預載入頭像失敗: {avatarCacheKey}, {ex.Message}");
+                                    }
+                                });
+                            }
+                            else
+                            {
+                                Debug.WriteLine($"未找到緩存頭像: {avatarCacheKey} (路徑: '{cachedAvatarPath}')");
+                            }
+
+                            chatItems.Add(chatItem);
+                        }
+                    }
+
+                    Debug.WriteLine($"載入帳號 {account} 的聊天列表緩存（包含頭像）: {chatItems.Count} 個聊天項目");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"載入聊天列表緩存（包含頭像）錯誤: {ex.Message}");
+            }
+
+            return chatItems;
+        }
+
+        /// <summary>
+        ///     升級 Friends 表以支援頭像緩存
+        /// </summary>
+        public static void UpgradeFriendsTableForAvatarCache()
+        {
+            try
+            {
+                Debug.WriteLine("開始升級 Friends 表以支援頭像緩存");
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    // 檢查並添加頭像相關欄位
+                    var columnsToAdd = new[]
+                    {
+                        ("AvatarCacheKey", "TEXT"),
+                        ("AvatarLocalPath", "TEXT"),
+                        ("AvatarLastUpdated", "TEXT"),
+                        ("AvatarUrl", "TEXT")
+                    };
+
+                    foreach (var (columnName, columnType) in columnsToAdd)
+                        try
+                        {
+                            var addColumnCmd = new SqliteCommand($@"
+                        ALTER TABLE Friends ADD COLUMN {columnName} {columnType}", db);
+                            addColumnCmd.ExecuteNonQuery();
+                            Debug.WriteLine($"成功添加 {columnName} 列到 Friends 表");
+                        }
+                        catch (SqliteException ex)
+                        {
+                            if (ex.Message.Contains("duplicate column name"))
+                                Debug.WriteLine($"{columnName} 列已存在");
+                            else
+                                Debug.WriteLine($"添加 {columnName} 列時發生錯誤: {ex.Message}");
+                        }
+
+                    // 為現有好友填充頭像緩存鍵
+                    PopulateFriendsAvatarKeys(db);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"升級 Friends 表時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     升級 Groups 表以支援頭像緩存
+        /// </summary>
+        public static void UpgradeGroupsTableForAvatarCache()
+        {
+            try
+            {
+                Debug.WriteLine("開始升級 Groups 表以支援頭像緩存");
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    // 檢查並添加頭像相關欄位
+                    var columnsToAdd = new[]
+                    {
+                        ("AvatarCacheKey", "TEXT"),
+                        ("AvatarLocalPath", "TEXT"),
+                        ("AvatarLastUpdated", "TEXT"),
+                        ("AvatarUrl", "TEXT")
+                    };
+
+                    foreach (var (columnName, columnType) in columnsToAdd)
+                        try
+                        {
+                            var addColumnCmd = new SqliteCommand($@"
+                        ALTER TABLE Groups ADD COLUMN {columnName} {columnType}", db);
+                            addColumnCmd.ExecuteNonQuery();
+                            Debug.WriteLine($"成功添加 {columnName} 列到 Groups 表");
+                        }
+                        catch (SqliteException ex)
+                        {
+                            if (ex.Message.Contains("duplicate column name"))
+                                Debug.WriteLine($"{columnName} 列已存在");
+                            else
+                                Debug.WriteLine($"添加 {columnName} 列時發生錯誤: {ex.Message}");
+                        }
+
+                    // 為現有群組填充頭像緩存鍵
+                    PopulateGroupsAvatarKeys(db);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"升級 Groups 表時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     為現有好友填充頭像緩存鍵
+        /// </summary>
+        private static void PopulateFriendsAvatarKeys(SqliteConnection db)
+        {
+            try
+            {
+                using (var transaction = db.BeginTransaction())
+                {
+                    // 獲取所有沒有頭像緩存鍵的好友
+                    var selectCmd = new SqliteCommand(@"
+                SELECT UserId FROM Friends 
+                WHERE AvatarCacheKey IS NULL OR AvatarCacheKey = ''", db, transaction);
+
+                    var friendsToUpdate = new List<long>();
+                    using (var reader = selectCmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                            friendsToUpdate.Add(Convert.ToInt64(reader["UserId"]));
+                    }
+
+                    // 批次更新頭像緩存鍵
+                    var updateCmd = new SqliteCommand(@"
+                UPDATE Friends 
+                SET AvatarCacheKey = @avatarCacheKey,
+                    AvatarUrl = @avatarUrl
+                WHERE UserId = @userId", db, transaction);
+
+                    var updatedCount = 0;
+                    foreach (var userId in friendsToUpdate)
+                    {
+                        var avatarCacheKey = $"friend_{userId}";
+                        var avatarUrl = GetUserAvatarUrl(userId);
+
+                        updateCmd.Parameters.Clear();
+                        updateCmd.Parameters.AddWithValue("@avatarCacheKey", avatarCacheKey);
+                        updateCmd.Parameters.AddWithValue("@avatarUrl", avatarUrl);
+                        updateCmd.Parameters.AddWithValue("@userId", userId);
+
+                        var result = updateCmd.ExecuteNonQuery();
+                        if (result > 0) updatedCount++;
+                    }
+
+                    transaction.Commit();
+                    Debug.WriteLine($"成功為 {updatedCount} 個好友填充頭像緩存鍵");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"填充好友頭像緩存鍵時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     為現有群組填充頭像緩存鍵
+        /// </summary>
+        private static void PopulateGroupsAvatarKeys(SqliteConnection db)
+        {
+            try
+            {
+                using (var transaction = db.BeginTransaction())
+                {
+                    // 獲取所有沒有頭像緩存鍵的群組
+                    var selectCmd = new SqliteCommand(@"
+                SELECT GroupId FROM Groups 
+                WHERE AvatarCacheKey IS NULL OR AvatarCacheKey = ''", db, transaction);
+
+                    var groupsToUpdate = new List<long>();
+                    using (var reader = selectCmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                            groupsToUpdate.Add(Convert.ToInt64(reader["GroupId"]));
+                    }
+
+                    // 批次更新頭像緩存鍵
+                    var updateCmd = new SqliteCommand(@"
+                UPDATE Groups 
+                SET AvatarCacheKey = @avatarCacheKey,
+                    AvatarUrl = @avatarUrl
+                WHERE GroupId = @groupId", db, transaction);
+
+                    var updatedCount = 0;
+                    foreach (var groupId in groupsToUpdate)
+                    {
+                        var avatarCacheKey = $"group_{groupId}";
+                        var avatarUrl = GetGroupAvatarUrl(groupId);
+
+                        updateCmd.Parameters.Clear();
+                        updateCmd.Parameters.AddWithValue("@avatarCacheKey", avatarCacheKey);
+                        updateCmd.Parameters.AddWithValue("@avatarUrl", avatarUrl);
+                        updateCmd.Parameters.AddWithValue("@groupId", groupId);
+
+                        var result = updateCmd.ExecuteNonQuery();
+                        if (result > 0) updatedCount++;
+                    }
+
+                    transaction.Commit();
+                    Debug.WriteLine($"成功為 {updatedCount} 個群組填充頭像緩存鍵");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"填充群組頭像緩存鍵時發生錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     增強版保存好友數據 - 包含頭像緩存信息
+        /// </summary>
+        public static void SaveFriendsWithCategoriesEnhanced(List<FriendCategory> categories)
+        {
+            try
+            {
+                Debug.WriteLine($"開始保存好友數據（增強版），共 {categories.Count} 個分類");
+
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    // 先升級表結構
+                    UpgradeFriendsTableForAvatarCache();
+
+                    using (var transaction = db.BeginTransaction())
+                    {
+                        try
+                        {
+                            // 清空現有數據
+                            var deleteCmd1 = new SqliteCommand("DELETE FROM Friends", db, transaction);
+                            var deletedFriends = deleteCmd1.ExecuteNonQuery();
+                            Debug.WriteLine($"刪除了 {deletedFriends} 個舊好友記錄");
+
+                            var deleteCmd2 = new SqliteCommand("DELETE FROM FriendCategories", db, transaction);
+                            var deletedCategories = deleteCmd2.ExecuteNonQuery();
+                            Debug.WriteLine($"刪除了 {deletedCategories} 個舊分類記錄");
+
+                            // 插入分類數據
+                            var insertCategoryCommand = new SqliteCommand(@"
+                        INSERT INTO FriendCategories (CategoryId, CategorySortId, CategoryName, CategoryMbCount, OnlineCount, LastUpdated) 
+                        VALUES (@categoryId, @categorySortId, @categoryName, @categoryMbCount, @onlineCount, @lastUpdated)",
+                                db, transaction);
+
+                            // 插入好友數據（包含頭像緩存信息）
+                            var insertFriendCommand = new SqliteCommand(@"
+                        INSERT OR REPLACE INTO Friends (UserId, Qid, LongNick, BirthdayYear, BirthdayMonth, BirthdayDay, Age, Sex, Email, PhoneNum, 
+                                            CategoryId, RichTime, Uid, Uin, Nick, Remark, Nickname, Level, LastUpdated, AvatarCacheKey, AvatarUrl) 
+                        VALUES (@userId, @qid, @longNick, @birthdayYear, @birthdayMonth, @birthdayDay, @age, @sex, @email, @phoneNum, 
+                                @categoryId, @richTime, @uid, @uin, @nick, @remark, @nickname, @level, @lastUpdated, @avatarCacheKey, @avatarUrl)",
+                                db, transaction);
+
+                            var processedFriends = new HashSet<long>();
+
+                            foreach (var category in categories)
+                            {
+                                // 插入分類
+                                insertCategoryCommand.Parameters.Clear();
+                                insertCategoryCommand.Parameters.AddWithValue("@categoryId", category.CategoryId);
+                                insertCategoryCommand.Parameters.AddWithValue("@categorySortId",
+                                    category.CategorySortId);
+                                insertCategoryCommand.Parameters.AddWithValue("@categoryName",
+                                    category.CategoryName ?? "");
+                                insertCategoryCommand.Parameters.AddWithValue("@categoryMbCount",
+                                    category.CategoryMbCount);
+                                insertCategoryCommand.Parameters.AddWithValue("@onlineCount", category.OnlineCount);
+                                insertCategoryCommand.Parameters.AddWithValue("@lastUpdated",
+                                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+
+                                insertCategoryCommand.ExecuteNonQuery();
+
+                                // 插入該分類下的好友（包含頭像信息）
+                                if (category.BuddyList != null)
+                                {
+                                    var categoryFriendCount = 0;
+                                    foreach (var friend in category.BuddyList)
+                                    {
+                                        if (friend.UserId == 0 || processedFriends.Contains(friend.UserId))
+                                            continue;
+
+                                        try
+                                        {
+                                            var avatarCacheKey = $"friend_{friend.UserId}";
+                                            var avatarUrl = GetUserAvatarUrl(friend.UserId);
+
+                                            // 檢查是否已有緩存的頭像
+                                            var avatarCache = GetAvatarCacheInfo(avatarCacheKey);
+                                            var avatarLocalPath = avatarCache?.LocalPath ?? "";
+                                            var avatarLastUpdated = avatarCache?.LastUpdated ?? "";
+
+                                            insertFriendCommand.Parameters.Clear();
+                                            insertFriendCommand.Parameters.AddWithValue("@userId", friend.UserId);
+                                            insertFriendCommand.Parameters.AddWithValue("@qid", friend.Qid ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@longNick",
+                                                friend.LongNick ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@birthdayYear",
+                                                friend.BirthdayYear);
+                                            insertFriendCommand.Parameters.AddWithValue("@birthdayMonth",
+                                                friend.BirthdayMonth);
+                                            insertFriendCommand.Parameters.AddWithValue("@birthdayDay",
+                                                friend.BirthdayDay);
+                                            insertFriendCommand.Parameters.AddWithValue("@age", friend.Age);
+                                            insertFriendCommand.Parameters.AddWithValue("@sex", friend.Sex ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@email", friend.Email ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@phoneNum",
+                                                friend.PhoneNum ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@categoryId",
+                                                friend.CategoryId);
+                                            insertFriendCommand.Parameters.AddWithValue("@richTime", friend.RichTime);
+                                            insertFriendCommand.Parameters.AddWithValue("@uid", friend.Uid ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@uin", friend.Uin ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@nick", friend.Nick ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@remark", friend.Remark ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@nickname",
+                                                friend.Nickname ?? "");
+                                            insertFriendCommand.Parameters.AddWithValue("@level", friend.Level);
+                                            insertFriendCommand.Parameters.AddWithValue("@lastUpdated",
+                                                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                                            insertFriendCommand.Parameters.AddWithValue("@avatarCacheKey",
+                                                avatarCacheKey);
+                                            insertFriendCommand.Parameters.AddWithValue("@avatarUrl", avatarUrl);
+
+                                            var result = insertFriendCommand.ExecuteNonQuery();
+                                            processedFriends.Add(friend.UserId);
+                                            categoryFriendCount++;
+                                        }
+                                        catch (Exception friendEx)
+                                        {
+                                            Debug.WriteLine($"保存好友 UserId: {friend.UserId} 時發生錯誤: {friendEx.Message}");
+                                        }
+                                    }
+
+                                    Debug.WriteLine(
+                                        $"分類 {category.CategoryName} 成功保存 {categoryFriendCount} 個好友（含頭像信息）");
                                 }
                             }
 
                             transaction.Commit();
-                            Debug.WriteLine($"智能保存帳號 {account} 的聊天列表緩存: {savedCount} 個聊天項目");
+                            Debug.WriteLine($"成功保存 {categories.Count} 個分類和 {processedFriends.Count} 個好友到數據庫（含頭像緩存）");
                         }
                         catch (Exception transactionEx)
                         {
                             transaction.Rollback();
-                            Debug.WriteLine($"智能保存聊天列表緩存事務錯誤: {transactionEx.Message}");
+                            Debug.WriteLine($"事務執行時發生錯誤，正在回滾: {transactionEx.Message}");
                             throw;
                         }
                     }
@@ -1434,12 +2173,80 @@ namespace NapcatUWP.Controls
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"智能保存聊天列表緩存錯誤: {ex.Message}");
+                Debug.WriteLine($"保存好友數據（增強版）錯誤: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 優化版 LoadChatListCache - 確保群組名稱正確載入
+        ///     增強版保存群組數據 - 包含頭像緩存信息
+        /// </summary>
+        public static void SaveGroupsEnhanced(List<GroupInfo> groups)
+        {
+            try
+            {
+                var dbpath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "setting.db");
+                using (var db = new SqliteConnection($"Filename={dbpath}"))
+                {
+                    db.Open();
+
+                    // 先升級表結構
+                    UpgradeGroupsTableForAvatarCache();
+
+                    using (var transaction = db.BeginTransaction())
+                    {
+                        try
+                        {
+                            // 清空現有群組數據
+                            var deleteCommand = new SqliteCommand("DELETE FROM Groups", db, transaction);
+                            var deletedCount = deleteCommand.ExecuteNonQuery();
+                            Debug.WriteLine($"刪除了 {deletedCount} 個舊群組記錄");
+
+                            // 插入新的群組數據（包含頭像緩存信息）
+                            var insertCommand = new SqliteCommand(@"
+                        INSERT INTO Groups (GroupId, GroupName, GroupRemark, MemberCount, MaxMemberCount, GroupAllShut, LastUpdated, AvatarCacheKey, AvatarUrl) 
+                        VALUES (@groupId, @groupName, @groupRemark, @memberCount, @maxMemberCount, @groupAllShut, @lastUpdated, @avatarCacheKey, @avatarUrl)",
+                                db, transaction);
+
+                            foreach (var group in groups)
+                            {
+                                var avatarCacheKey = $"group_{group.GroupId}";
+                                var avatarUrl = GetGroupAvatarUrl(group.GroupId);
+
+                                insertCommand.Parameters.Clear();
+                                insertCommand.Parameters.AddWithValue("@groupId", group.GroupId);
+                                insertCommand.Parameters.AddWithValue("@groupName", group.GroupName ?? "");
+                                insertCommand.Parameters.AddWithValue("@groupRemark", group.GroupRemark ?? "");
+                                insertCommand.Parameters.AddWithValue("@memberCount", group.MemberCount);
+                                insertCommand.Parameters.AddWithValue("@maxMemberCount", group.MaxMemberCount);
+                                insertCommand.Parameters.AddWithValue("@groupAllShut", group.GroupAllShut ? 1 : 0);
+                                insertCommand.Parameters.AddWithValue("@lastUpdated",
+                                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                                insertCommand.Parameters.AddWithValue("@avatarCacheKey", avatarCacheKey);
+                                insertCommand.Parameters.AddWithValue("@avatarUrl", avatarUrl);
+
+                                insertCommand.ExecuteNonQuery();
+                            }
+
+                            transaction.Commit();
+                            Debug.WriteLine($"成功保存 {groups.Count} 個群組到數據庫（含頭像緩存）");
+                        }
+                        catch (Exception ex)
+                        {
+                            transaction.Rollback();
+                            Debug.WriteLine($"保存群組數據事務錯誤，已回滾: {ex.Message}");
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"保存群組數據（增強版）錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        ///     優化版 LoadChatListCache - 確保群組名稱正確載入
         /// </summary>
         public static List<ChatItem> LoadChatListCache(string account)
         {
@@ -1485,9 +2292,7 @@ namespace NapcatUWP.Controls
                                 // 如果找不到好友信息，保留緩存中的名稱（如果有的話）
                                 if (actualName.StartsWith("用戶 ") && !string.IsNullOrEmpty(cachedName) &&
                                     !cachedName.StartsWith("用戶 "))
-                                {
                                     actualName = cachedName;
-                                }
                             }
 
                             var chatItem = new ChatItem
@@ -1510,10 +2315,7 @@ namespace NapcatUWP.Controls
 
                     // 記錄名稱修復情況
                     var groupsFixed = chatItems.Count(c => c.IsGroup && !c.Name.StartsWith("群組 "));
-                    if (groupsFixed > 0)
-                    {
-                        Debug.WriteLine($"成功修復 {groupsFixed} 個群組的名稱顯示");
-                    }
+                    if (groupsFixed > 0) Debug.WriteLine($"成功修復 {groupsFixed} 個群組的名稱顯示");
                 }
             }
             catch (Exception ex)
@@ -3020,7 +3822,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        /// 异步删除头像缓存文件
+        ///     异步删除头像缓存文件
         /// </summary>
         private static async Task DeleteAvatarCacheFilesAsync()
         {
@@ -3030,7 +3832,6 @@ namespace NapcatUWP.Controls
                 var files = await cacheFolder.GetFilesAsync();
 
                 foreach (var file in files)
-                {
                     try
                     {
                         await file.DeleteAsync();
@@ -3039,7 +3840,6 @@ namespace NapcatUWP.Controls
                     {
                         Debug.WriteLine($"删除头像缓存文件失败: {file.Name}, {ex.Message}");
                     }
-                }
 
                 Debug.WriteLine($"头像缓存文件清理完成，删除了 {files.Count} 个文件");
             }
@@ -3050,7 +3850,7 @@ namespace NapcatUWP.Controls
         }
 
         /// <summary>
-        ///     获取数据库统计信息 - 修复数据库大小显示
+        ///     获取数据库统计信息 - UWP 15063 兼容版本
         /// </summary>
         public static DatabaseStatistics GetDatabaseStatistics()
         {
@@ -3091,25 +3891,24 @@ namespace NapcatUWP.Controls
                     var settingsCountCmd = new SqliteCommand("SELECT COUNT(*) FROM AppSettings", db);
                     stats.TotalSettings = Convert.ToInt32(settingsCountCmd.ExecuteScalar());
 
-                    // 获取头像缓存数量和大小
+                    // 获取头像缓存数量和大小 - 修复 UWP 15063 兼容性
                     var avatarCountCmd =
                         new SqliteCommand("SELECT COUNT(*), COALESCE(SUM(FileSize), 0) FROM AvatarCache", db);
                     using (var reader = avatarCountCmd.ExecuteReader())
                     {
                         if (reader.Read())
                         {
-                            stats.TotalAvatars = reader.GetInt32(0);
-                            stats.AvatarCacheSize = reader.GetInt64(1);
+                            // 使用 Convert 方法确保兼容性
+                            stats.TotalAvatars = Convert.ToInt32(reader.GetValue(0));
+                            stats.AvatarCacheSize = Convert.ToInt64(reader.GetValue(1));
                         }
                     }
                 }
 
-                // 获取数据库文件实际大小（而不是可用空间）
+                // 获取数据库文件实际大小
                 var fileInfo = new FileInfo(dbpath);
                 if (fileInfo.Exists)
-                {
                     stats.DatabaseSize = fileInfo.Length;
-                }
 
                 Debug.WriteLine(
                     $"获取数据库统计信息成功：消息 {stats.TotalMessages} 条，群组 {stats.TotalGroups} 个，好友 {stats.TotalFriends} 个，头像 {stats.TotalAvatars} 个");
@@ -3174,5 +3973,14 @@ namespace NapcatUWP.Controls
         }
 
         #endregion
+    }
+
+    /// <summary>
+    ///     頭像緩存信息類 - 替代元組，兼容 C# 7.3
+    /// </summary>
+    public class AvatarCacheInfo
+    {
+        public string LocalPath { get; set; } = "";
+        public string LastUpdated { get; set; } = "";
     }
 }
