@@ -97,6 +97,8 @@ namespace AnnaMessager.Core.Models
         // 未讀訊息顯示
         public bool HasUnreadMessages => UnreadCount > 0;
         public string UnreadCountDisplay => UnreadCount > 99 ? "99+" : UnreadCount.ToString();
+
+        public string DisplayLastMessage => LastMessage ?? "";
     }
 
     public class MessageItem : MvxNotifyPropertyChanged

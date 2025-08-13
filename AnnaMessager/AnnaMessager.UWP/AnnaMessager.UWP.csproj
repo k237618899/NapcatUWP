@@ -97,6 +97,7 @@
     </Compile>
     <Compile Include="Converters\BooleanToVisibilityConverter.cs" />
     <Compile Include="Converters\EmptyListToVisibilityConverter.cs" />
+    <Compile Include="Converters\FirstLetterConverter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Services\UwpNotificationService.cs" />
     <Compile Include="Services\UwpSettingsService.cs" />

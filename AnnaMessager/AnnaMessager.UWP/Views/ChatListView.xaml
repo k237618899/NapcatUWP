@@ -1,13 +1,54 @@
-﻿<mvvm:MvxWindowsPage 
+﻿<views:MvxWindowsPage
     x:Class="AnnaMessager.UWP.Views.ChatListView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:mvvm="using:MvvmCross.Uwp.Views"
+    xmlns:views="using:MvvmCross.Uwp.Views"
     xmlns:converters="using:AnnaMessager.UWP.Converters"
+    x:TypeArguments="viewModels:ChatListViewModel"
+    xmlns:viewModels="using:AnnaMessager.Core.ViewModels"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
-    <mvvm:MvxWindowsPage.Resources>
+    <views:MvxWindowsPage.Resources>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
+        <converters:EmptyListToVisibilityConverter x:Key="EmptyListToVisibilityConverter"/>
+
+        <!-- 簡化的樣式定義 -->
+        <Style x:Key="TitleTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="FontWeight" Value="Light"/>
+            <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
+        </Style>
+
+        <Style x:Key="ChatNameTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
+        </Style>
+
+        <Style x:Key="LastMessageTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+        </Style>
+
+        <Style x:Key="TimeTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+        </Style>
+
+        <Style x:Key="FilterToggleButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="#FF0078D4"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="MinWidth" Value="60"/>
+        </Style>
+
+        <!-- 顏色資源 -->
+        <SolidColorBrush x:Key="AccentBrush" Color="#FF005A9E"/>
+        <SolidColorBrush x:Key="UnreadBadgeBrush" Color="#FFFF4444"/>
+        <SolidColorBrush x:Key="OnlineBrush" Color="#FF4CAF50"/>
 
         <!-- 聊天項目樣式 -->
         <Style x:Key="ChatItemStyle" TargetType="ListViewItem">
@@ -15,46 +56,9 @@
             <Setter Property="Padding" Value="16,8"/>
             <Setter Property="Margin" Value="0,1"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListViewItem">
-                        <Grid x:Name="ContentBorder" 
-                              Background="{TemplateBinding Background}"
-                              BorderBrush="{TemplateBinding BorderBrush}"
-                              BorderThickness="{TemplateBinding BorderThickness}">
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup x:Name="CommonStates">
-                                    <VisualState x:Name="Normal"/>
-                                    <VisualState x:Name="PointerOver">
-                                        <VisualState.Setters>
-                                            <Setter Target="ContentBorder.Background" 
-                                                   Value="{ThemeResource SystemControlBackgroundListLowBrush}"/>
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                    <VisualState x:Name="Pressed">
-                                        <VisualState.Setters>
-                                            <Setter Target="ContentBorder.Background" 
-                                                   Value="{ThemeResource SystemControlBackgroundListMediumBrush}"/>
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
-                            <ContentPresenter x:Name="ContentPresenter"
-                                            ContentTransitions="{TemplateBinding ContentTransitions}"
-                                            Content="{TemplateBinding Content}"
-                                            ContentTemplate="{TemplateBinding ContentTemplate}"
-                                            Margin="{TemplateBinding Padding}"
-                                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
         </Style>
 
-    </mvvm:MvxWindowsPage.Resources>
+    </views:MvxWindowsPage.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -81,48 +85,12 @@
             <!-- 搜索框 -->
             <TextBox Grid.Row="0"
                      x:Name="SearchBox" 
-                     Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     Text="{Binding SearchText, Mode=TwoWay}"
                      PlaceholderText="搜尋聊天、聯絡人..."
                      Margin="0,0,0,12"
-                     CornerRadius="8"
                      Background="{ThemeResource SystemControlBackgroundAltHighBrush}"
                      BorderBrush="Transparent"
-                     TextChanged="SearchBox_TextChanged">
-                <TextBox.Resources>
-                    <Style TargetType="TextBox">
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="TextBox">
-                                    <Grid>
-                                        <Border x:Name="BorderElement"
-                                                Background="{TemplateBinding Background}"
-                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                CornerRadius="{TemplateBinding CornerRadius}"/>
-                                        <Grid Margin="12,8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <FontIcon Grid.Column="0" 
-                                                     Glyph="&#xE721;" 
-                                                     FontSize="16"
-                                                     Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                                     Margin="0,0,8,0"/>
-                                            <ScrollViewer Grid.Column="1"
-                                                         x:Name="ContentElement"
-                                                         HorizontalScrollMode="Hidden"
-                                                         HorizontalScrollBarVisibility="Hidden"
-                                                         VerticalScrollMode="Hidden"
-                                                         VerticalScrollBarVisibility="Hidden"/>
-                                        </Grid>
-                                    </Grid>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </TextBox.Resources>
-            </TextBox>
+                     TextChanged="SearchBox_TextChanged"/>
 
             <!-- 過濾按鈕 -->
             <StackPanel Grid.Row="1" 
@@ -149,45 +117,11 @@
                   ItemsSource="{Binding FilteredChatList}"
                   SelectionMode="Single"
                   SelectionChanged="ChatListView_SelectionChanged"
-                  ItemContainerStyle="{StaticResource ChatItemStyle}"
-                  ShowsScrollingPlaceholders="False">
+                  ItemContainerStyle="{StaticResource ChatItemStyle}">
 
             <ListView.ItemTemplate>
                 <DataTemplate>
-                    <Grid Height="72" 
-                          Background="Transparent"
-                          RightTapped="ChatItem_RightTapped">
-                        <Grid.ContextFlyout>
-                            <MenuFlyout>
-                                <MenuFlyoutItem Text="置頂聊天" 
-                                               Icon="Pin"
-                                               Command="{Binding DataContext.PinChatCommand, ElementName=ChatListViewControl}"
-                                               CommandParameter="{Binding}"
-                                               Visibility="{Binding IsPinned, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
-                                <MenuFlyoutItem Text="取消置頂" 
-                                               Icon="UnPin"
-                                               Command="{Binding DataContext.PinChatCommand, ElementName=ChatListViewControl}"
-                                               CommandParameter="{Binding}"
-                                               Visibility="{Binding IsPinned, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                <MenuFlyoutSeparator/>
-                                <MenuFlyoutItem Text="靜音聊天" 
-                                               Icon="Mute"
-                                               Command="{Binding DataContext.MuteChatCommand, ElementName=ChatListViewControl}"
-                                               CommandParameter="{Binding}"
-                                               Visibility="{Binding IsMuted, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
-                                <MenuFlyoutItem Text="取消靜音" 
-                                               Icon="Volume"
-                                               Command="{Binding DataContext.MuteChatCommand, ElementName=ChatListViewControl}"
-                                               CommandParameter="{Binding}"
-                                               Visibility="{Binding IsMuted, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                                <MenuFlyoutSeparator/>
-                                <MenuFlyoutItem Text="刪除聊天" 
-                                               Icon="Delete"
-                                               Command="{Binding DataContext.DeleteChatCommand, ElementName=ChatListViewControl}"
-                                               CommandParameter="{Binding}"/>
-                            </MenuFlyout>
-                        </Grid.ContextFlyout>
-
+                    <Grid Height="72" Background="Transparent">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="60"/>
                             <ColumnDefinition Width="*"/>
@@ -196,8 +130,8 @@
 
                         <!-- 頭像區域 -->
                         <Grid Grid.Column="0" Width="48" Height="48">
-                            <!-- 頭像背景 -->
-                            <Ellipse Fill="{Binding AvatarColor, FallbackValue='#FF0078D4'}" 
+                            <!-- 頭像背景（當沒有頭像時） -->
+                            <Ellipse Fill="{Binding AvatarColor, FallbackValue=#FF0078D4}"
                                     Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
 
                             <!-- 頭像圖片 -->
@@ -207,12 +141,7 @@
                                 </Ellipse.Fill>
                             </Ellipse>
 
-                            <!-- 載入指示器 -->
-                            <ProgressRing Width="20" Height="20"
-                                         IsActive="{Binding IsLoadingAvatar}"
-                                         Visibility="{Binding IsLoadingAvatar, Converter={StaticResource BoolToVisibilityConverter}}"/>
-
-                            <!-- 頭像文字 (當沒有圖片時顯示) -->
+                            <!-- 頭像文字（當沒有頭像圖片時） -->
                             <TextBlock Text="{Binding Name, Converter={StaticResource FirstLetterConverter}}"
                                       FontSize="20"
                                       FontWeight="SemiBold"
@@ -221,31 +150,10 @@
                                       VerticalAlignment="Center"
                                       Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
 
-                            <!-- 在線狀態指示器 (僅好友聊天) -->
-                            <Ellipse Width="14" Height="14"
-                                    Fill="{StaticResource OnlineBrush}"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Bottom"
-                                    Margin="0,0,-2,-2"
-                                    Visibility="{Binding IsGroup, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
-
-                            <!-- 置頂圖標 -->
-                            <FontIcon Glyph="&#xE718;"
-                                     FontSize="12"
-                                     Foreground="{StaticResource AccentBrush}"
-                                     HorizontalAlignment="Left"
-                                     VerticalAlignment="Top"
-                                     Margin="-4,-4,0,0"
-                                     Visibility="{Binding IsPinned, Converter={StaticResource BoolToVisibilityConverter}}"/>
-
-                            <!-- 靜音圖標 -->
-                            <FontIcon Glyph="&#xE74F;"
-                                     FontSize="12"
-                                     Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                     HorizontalAlignment="Right"
-                                     VerticalAlignment="Top"
-                                     Margin="0,-4,-4,0"
-                                     Visibility="{Binding IsMuted, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            <!-- 載入指示器 -->
+                            <ProgressRing Width="20" Height="20"
+                                         IsActive="{Binding IsLoadingAvatar}"
+                                         Visibility="{Binding IsLoadingAvatar, Converter={StaticResource BoolToVisibilityConverter}}"/>
                         </Grid>
 
                         <!-- 聊天信息區域 -->
@@ -288,7 +196,7 @@
                                    HorizontalAlignment="Right"
                                    Margin="8,0,0,0">
                             <!-- 時間 -->
-                            <TextBlock Text="{Binding DisplayTime}"
+                            <TextBlock Text="{Binding LastTime}"
                                       Style="{StaticResource TimeTextStyle}"
                                       HorizontalAlignment="Right"/>
 
@@ -298,8 +206,8 @@
                                    MinWidth="20"
                                    Height="20"
                                    Margin="0,4,0,0"
-                                   Visibility="{Binding HasUnreadMessages, Converter={StaticResource BoolToVisibilityConverter}}">
-                                <TextBlock Text="{Binding UnreadCountDisplay}"
+                                   Visibility="{Binding UnreadCount, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <TextBlock Text="{Binding UnreadCount}"
                                           FontSize="11"
                                           FontWeight="Bold"
                                           Foreground="White"
@@ -311,61 +219,44 @@
                     </Grid>
                 </DataTemplate>
             </ListView.ItemTemplate>
-
-            <!-- 空狀態 -->
-            <ListView.Template>
-                <ControlTemplate TargetType="ListView">
-                    <Grid>
-                        <ScrollViewer x:Name="ScrollViewer"
-                                     HorizontalScrollMode="{TemplateBinding ScrollViewer.HorizontalScrollMode}"
-                                     HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
-                                     VerticalScrollMode="{TemplateBinding ScrollViewer.VerticalScrollMode}"
-                                     VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
-                                     ZoomMode="Disabled">
-                            <ItemsPresenter/>
-                        </ScrollViewer>
-
-                        <!-- 空狀態顯示 -->
-                        <StackPanel HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   Visibility="{Binding FilteredChatList.Count, Converter={StaticResource EmptyListToVisibilityConverter}}">
-                            <FontIcon Glyph="&#xE8BD;"
-                                     FontSize="48"
-                                     Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                     HorizontalAlignment="Center"
-                                     Margin="0,0,0,16"/>
-                            <TextBlock Text="暫無聊天"
-                                      FontSize="18"
-                                      Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                      HorizontalAlignment="Center"/>
-                            <TextBlock Text="點擊聯絡人開始聊天"
-                                      FontSize="14"
-                                      Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}"
-                                      HorizontalAlignment="Center"
-                                      Margin="0,8,0,0"/>
-                        </StackPanel>
-                    </Grid>
-                </ControlTemplate>
-            </ListView.Template>
         </ListView>
 
         <!-- 載入指示器 -->
-        <StackPanel Grid.Row="2" 
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   Visibility="{Binding IsRefreshing, Converter={StaticResource BoolToVisibilityConverter}}">
-            <ProgressRing Width="40" Height="40" IsActive="True"/>
-            <TextBlock Text="載入中..."
-                      FontSize="14"
-                      Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                      HorizontalAlignment="Center"
-                      Margin="0,8,0,0"/>
-        </StackPanel>
+        <Grid Grid.Row="2" 
+              Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+              Visibility="{Binding IsRefreshing, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center"
+                       VerticalAlignment="Center">
+                <ProgressRing Width="40" Height="40" IsActive="True"/>
+                <TextBlock Text="載入中..."
+                          FontSize="14"
+                          Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                          HorizontalAlignment="Center"
+                          Margin="0,8,0,0"/>
+            </StackPanel>
+        </Grid>
 
-        <!-- 下拉刷新 -->
-        <RefreshContainer Grid.Row="2" 
-                         RefreshRequested="RefreshContainer_RefreshRequested">
-            <!-- RefreshContainer 的內容將由 ListView 填充 -->
-        </RefreshContainer>
+        <!-- 空狀態顯示 -->
+        <Grid Grid.Row="2"
+              Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+              Visibility="{Binding FilteredChatList.Count, Converter={StaticResource EmptyListToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center"
+                       VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE8BD;"
+                         FontSize="48"
+                         Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                         HorizontalAlignment="Center"
+                         Margin="0,0,0,16"/>
+                <TextBlock Text="暫無聊天"
+                          FontSize="18"
+                          Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                          HorizontalAlignment="Center"/>
+                <TextBlock Text="點擊聯絡人開始聊天"
+                          FontSize="14"
+                          Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}"
+                          HorizontalAlignment="Center"
+                          Margin="0,8,0,0"/>
+            </StackPanel>
+        </Grid>
     </Grid>
-</mvvm:MvxWindowsPage>
+</views:MvxWindowsPage>
