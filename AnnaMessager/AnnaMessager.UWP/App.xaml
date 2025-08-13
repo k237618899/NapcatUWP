@@ -1,0 +1,68 @@
+﻿<Application
+    x:Class="AnnaMessager.UWP.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:AnnaMessager.UWP"
+    xmlns:converters="using:AnnaMessager.UWP.Converters"
+    RequestedTheme="Light">
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- 顏色資源 -->
+            <Color x:Key="PrimaryColor">#FF0078D4</Color>
+            <Color x:Key="AccentColor">#FF005A9E</Color>
+            <Color x:Key="UnreadBadgeColor">#FFFF4444</Color>
+            <Color x:Key="OnlineColor">#FF4CAF50</Color>
+            <Color x:Key="OfflineColor">#FF9E9E9E</Color>
+
+            <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource PrimaryColor}"/>
+            <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
+            <SolidColorBrush x:Key="UnreadBadgeBrush" Color="{StaticResource UnreadBadgeColor}"/>
+            <SolidColorBrush x:Key="OnlineBrush" Color="{StaticResource OnlineColor}"/>
+            <SolidColorBrush x:Key="OfflineBrush" Color="{StaticResource OfflineColor}"/>
+
+            <!-- 字體樣式 -->
+            <Style x:Key="TitleTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="28"/>
+                <Setter Property="FontWeight" Value="Light"/>
+                <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
+            </Style>
+
+            <Style x:Key="ChatNameTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="16"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
+            </Style>
+
+            <Style x:Key="LastMessageTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="14"/>
+                <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+            </Style>
+
+            <Style x:Key="TimeTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+            </Style>
+
+            <!-- 按鈕樣式 -->
+            <Style x:Key="FilterToggleButtonStyle" TargetType="ToggleButton">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="12,6"/>
+                <Setter Property="CornerRadius" Value="16"/>
+                <Setter Property="FontSize" Value="14"/>
+                <Setter Property="MinWidth" Value="60"/>
+            </Style>
+
+            <!-- 動畫資源 -->
+            <Storyboard x:Key="FadeInAnimation">
+                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.3"/>
+            </Storyboard>
+
+            <!-- 轉換器 -->
+            <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
+            <converters:EmptyListToVisibilityConverter x:Key="EmptyListToVisibilityConverter"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
