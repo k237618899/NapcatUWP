@@ -10,21 +10,20 @@ namespace AnnaMessager.Core
     {
         public override void Initialize()
         {
-            // 註冊核心服務
-            Mvx.RegisterSingleton<IOneBotService>(() => new OneBotService());
-            Mvx.RegisterSingleton<ISettingsService>(() => new CrossPlatformSettingsService());
-            Mvx.RegisterSingleton<ICacheManager>(() => new CrossPlatformCacheManager());
-            Mvx.RegisterSingleton<ISearchService>(() => new InMemorySearchService());
+            // 註冊核心服務 - 使用簡單的實現避免依賴問題
+            Mvx.LazyConstructAndRegisterSingleton<IOneBotService, OneBotService>();
 
-            // 注意：INotificationService 和 IUserInteractionService 在各平台的 Setup.cs 中註冊
-            // 因為需要平台特定的實現
+            // 使用我們的簡單實現
+            Mvx.RegisterSingleton<ISettingsService>(() => new SimpleSettingsService());
+            Mvx.RegisterSingleton<ICacheManager>(() => new SimpleCacheManager());
 
             CreatableTypes()
                 .EndingWith("Service")
                 .AsInterfaces()
                 .RegisterAsLazySingleton();
 
-            RegisterAppStart<ChatListViewModel>();
+            // 從登入頁面開始，避免複雜依賴
+            RegisterAppStart<LoginViewModel>();
         }
     }
 }

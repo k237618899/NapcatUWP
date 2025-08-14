@@ -4,8 +4,6 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:views="using:MvvmCross.Uwp.Views"
     xmlns:converters="using:AnnaMessager.UWP.Converters"
-    x:TypeArguments="viewModels:ChatListViewModel"
-    xmlns:viewModels="using:AnnaMessager.Core.ViewModels"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
     <views:MvxWindowsPage.Resources>
@@ -131,7 +129,7 @@
                         <!-- 頭像區域 -->
                         <Grid Grid.Column="0" Width="48" Height="48">
                             <!-- 頭像背景（當沒有頭像時） -->
-                            <Ellipse Fill="{Binding AvatarColor, FallbackValue=#FF0078D4}"
+                            <Ellipse Fill="{Binding AvatarColor, FallbackValue='#FF0078D4'}"
                                     Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
 
                             <!-- 頭像圖片 -->

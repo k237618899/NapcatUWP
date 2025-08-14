@@ -82,6 +82,7 @@ namespace AnnaMessager.Core.Models
     public class ServerSettings : MvxNotifyPropertyChanged
     {
         private string _accessToken;
+        private string _account;
         private bool _autoReconnect;
         private int _connectionTimeout;
         private bool _enableSsl;
@@ -91,6 +92,12 @@ namespace AnnaMessager.Core.Models
         {
             get => _serverUrl;
             set => SetProperty(ref _serverUrl, value);
+        }
+
+        public string Account
+        {
+            get => _account;
+            set => SetProperty(ref _account, value);
         }
 
         public string AccessToken

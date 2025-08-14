@@ -1,0 +1,260 @@
+﻿<views:MvxWindowsPage
+    x:Class="AnnaMessager.UWP.Views.ServerSettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:MvvmCross.Uwp.Views"
+    xmlns:converters="using:AnnaMessager.UWP.Converters"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <views:MvxWindowsPage.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <converters:TestingTextConverter x:Key="TestingTextConverter"/>
+        <converters:SavingTextConverter x:Key="SavingTextConverter"/>
+        
+        <!-- 設定項目樣式 -->
+        <Style x:Key="SettingItemStyle" TargetType="Grid">
+            <Setter Property="Padding" Value="24,16"/>
+            <Setter Property="BorderBrush" Value="Gray"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        </Style>
+        
+        <!-- 標題樣式 -->
+        <Style x:Key="TitleTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="FontWeight" Value="Light"/>
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
+        
+        <!-- 標籤樣式 -->
+        <Style x:Key="LabelTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        
+        <!-- 描述樣式 -->
+        <Style x:Key="DescriptionTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="Gray"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        
+        <!-- 輸入框樣式 -->
+        <Style x:Key="InputTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="Gray"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="MinHeight" Value="40"/>
+        </Style>
+    </views:MvxWindowsPage.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 標題欄 -->
+        <Grid Grid.Row="0" Padding="24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <Button Grid.Column="0"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    FontFamily="Segoe MDL2 Assets"
+                    Content="&#xE72B;"
+                    FontSize="16"
+                    Width="40"
+                    Height="40"
+                    Command="{Binding CancelCommand}"
+                    VerticalAlignment="Center"/>
+                    
+            <TextBlock Grid.Column="1"
+                       Text="伺服器設定" 
+                       Style="{StaticResource TitleTextStyle}"
+                       VerticalAlignment="Center"
+                       Margin="16,0,0,0"/>
+        </Grid>
+
+        <!-- 設定內容 -->
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Padding="24,0,24,24">
+                
+                <!-- 伺服器地址 -->
+                <TextBlock Text="伺服器地址"
+                           Style="{StaticResource LabelTextStyle}"/>
+                <TextBox Text="{Binding ServerUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBoxStyle}"
+                         PlaceholderText="例如：ws://localhost:3001"/>
+                <TextBlock Text="請輸入 OneBot WebSocket 伺服器地址，支援 ws:// 和 wss:// 協議"
+                           Style="{StaticResource DescriptionTextStyle}"/>
+
+                <!-- 存取令牌 -->
+                <TextBlock Text="存取令牌"
+                           Style="{StaticResource LabelTextStyle}"
+                           Margin="0,24,0,8"/>
+                <PasswordBox Password="{Binding AccessToken, Mode=TwoWay}"
+                            Background="White"
+                            BorderBrush="Gray"
+                            BorderThickness="1"
+                            PlaceholderText="選填：伺服器存取令牌"
+                            FontSize="14"
+                            MinHeight="40"/>
+                <TextBlock Text="如果伺服器設置了存取令牌，請在此輸入。留空表示無需驗證。"
+                           Style="{StaticResource DescriptionTextStyle}"/>
+
+                <!-- 連接超時 -->
+                <TextBlock Text="連接超時（秒）"
+                           Style="{StaticResource LabelTextStyle}"
+                           Margin="0,24,0,8"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <Slider Grid.Column="0"
+                            Minimum="5"
+                            Maximum="120"
+                            Value="{Binding ConnectionTimeout, Mode=TwoWay}"
+                            VerticalAlignment="Center"/>
+                    
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding ConnectionTimeout}"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Margin="16,0,0,0"
+                               MinWidth="30"/>
+                </Grid>
+                <TextBlock Text="連接伺服器的超時時間，建議設定為 30 秒"
+                           Style="{StaticResource DescriptionTextStyle}"/>
+
+                <!-- SSL 設定 -->
+                <Grid Margin="0,24,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="啟用 SSL/TLS"
+                                   Style="{StaticResource LabelTextStyle}"/>
+                        <TextBlock Text="使用加密連接，適用於 wss:// 協議"
+                                   Style="{StaticResource DescriptionTextStyle}"/>
+                    </StackPanel>
+                    
+                    <ToggleSwitch Grid.Column="1"
+                                  IsOn="{Binding EnableSsl, Mode=TwoWay}"
+                                  VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- 自動重連 -->
+                <Grid Margin="0,16,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="自動重新連接"
+                                   Style="{StaticResource LabelTextStyle}"/>
+                        <TextBlock Text="連接斷開時自動嘗試重新連接"
+                                   Style="{StaticResource DescriptionTextStyle}"/>
+                    </StackPanel>
+                    
+                    <ToggleSwitch Grid.Column="1"
+                                  IsOn="{Binding AutoReconnect, Mode=TwoWay}"
+                                  VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- 測試連接結果 -->
+                <Border Background="#FFF0F0F0"
+                        Padding="16"
+                        Margin="0,24,0,0"
+                        Visibility="{Binding HasTestResult, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="{Binding TestResult}"
+                               FontSize="14"
+                               TextWrapping="Wrap"
+                               Foreground="Black"/>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 底部按鈕 -->
+        <Grid Grid.Row="2" 
+              Background="White"
+              BorderBrush="Gray"
+              BorderThickness="0,1,0,0"
+              Padding="24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 測試連接按鈕 -->
+            <StackPanel Grid.Column="0" 
+                       Orientation="Horizontal"
+                       HorizontalAlignment="Left">
+                <Button Background="Transparent"
+                        BorderBrush="#FF0078D4"
+                        BorderThickness="1"
+                        Foreground="#FF0078D4"
+                        Command="{Binding TestConnectionCommand}"
+                        IsEnabled="{Binding IsTesting, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"
+                        MinWidth="100"
+                        Height="36">
+                    <StackPanel Orientation="Horizontal">
+                        <ProgressRing Width="16" Height="16"
+                                     IsActive="{Binding IsTesting}"
+                                     Visibility="{Binding IsTesting, Converter={StaticResource BoolToVisibilityConverter}}"
+                                     Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding IsTesting, Converter={StaticResource TestingTextConverter}}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+            <!-- 取消按鈕 -->
+            <Button Grid.Column="1"
+                    Content="取消"
+                    Background="Transparent"
+                    BorderBrush="Gray"
+                    BorderThickness="1"
+                    Foreground="Gray"
+                    Command="{Binding CancelCommand}"
+                    MinWidth="80"
+                    Height="36"
+                    Margin="0,0,12,0"/>
+
+            <!-- 儲存按鈕 -->
+            <Button Grid.Column="2"
+                    Background="#FF0078D4"
+                    Foreground="White"
+                    BorderBrush="Transparent"
+                    Command="{Binding SaveCommand}"
+                    IsEnabled="{Binding IsSaving, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"
+                    MinWidth="80"
+                    Height="36">
+                <StackPanel Orientation="Horizontal">
+                    <ProgressRing Width="16" Height="16"
+                                 IsActive="{Binding IsSaving}"
+                                 Visibility="{Binding IsSaving, Converter={StaticResource BoolToVisibilityConverter}}"
+                                 Margin="0,0,8,0"/>
+                    <TextBlock Text="{Binding IsSaving, Converter={StaticResource SavingTextConverter}}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+    </Grid>
+</views:MvxWindowsPage>

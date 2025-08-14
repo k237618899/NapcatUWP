@@ -340,11 +340,23 @@ namespace AnnaMessager.Core.ViewModels
             }
         }
 
-        private async Task DeleteMessageAsync(MessageItem message)
+        private Task DeleteMessageAsync(MessageItem message)
         {
-            if (message == null) return;
+            if (message == null)
+            {
+                // PCL Profile111 相容的方式
+                var tcs = new TaskCompletionSource<bool>();
+                tcs.SetResult(true);
+                return tcs.Task;
+            }
+
             Messages.Remove(message);
             Debug.WriteLine($"已刪除消息: {message.MessageId}");
+
+            // PCL Profile111 相容的方式
+            var completedTcs = new TaskCompletionSource<bool>();
+            completedTcs.SetResult(true);
+            return completedTcs.Task;
         }
 
         private void CopyMessage(MessageItem message)

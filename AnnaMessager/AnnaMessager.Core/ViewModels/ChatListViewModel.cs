@@ -16,7 +16,6 @@ namespace AnnaMessager.Core.ViewModels
         private readonly ICacheManager _cacheManager;
         private readonly INotificationService _notificationService;
         private readonly IOneBotService _oneBotService;
-        private readonly ISearchService _searchService;
         private readonly ISettingsService _settingsService;
         private AppSettings _appSettings;
         private ObservableCollection<ChatItem> _chatList;
@@ -30,7 +29,6 @@ namespace AnnaMessager.Core.ViewModels
         {
             _oneBotService = oneBotService;
             _cacheManager = Mvx.Resolve<ICacheManager>();
-            _searchService = Mvx.Resolve<ISearchService>();
             _notificationService = Mvx.Resolve<INotificationService>();
             _settingsService = Mvx.Resolve<ISettingsService>();
 
@@ -227,25 +225,29 @@ namespace AnnaMessager.Core.ViewModels
         {
             try
             {
-                var sourceList = ChatList.ToList();
-
-                // 應用搜索
-                if (!string.IsNullOrEmpty(SearchText))
-                    sourceList = await _searchService.SearchChatsAsync(sourceList, SearchText);
-
-                // 應用過濾條件
-                var filter = new ChatFilter
+                await Task.Run(() =>
                 {
-                    HasUnreadMessages = ShowOnlyUnread ? true : (bool?)null,
-                    IsPinned = ShowOnlyPinned ? true : (bool?)null
-                };
+                    var sourceList = ChatList.ToList();
 
-                if (ShowOnlyUnread || ShowOnlyPinned)
-                    sourceList = await _searchService.FilterChatsAsync(sourceList, filter);
+                    // 應用搜索 - 直接實現搜索邏輯
+                    if (!string.IsNullOrEmpty(SearchText))
+                        sourceList = sourceList.Where(chat =>
+                            chat.Name.Contains(SearchText) ||
+                            chat.LastMessage.Contains(SearchText)
+                        ).ToList();
 
-                // 更新顯示列表
-                FilteredChatList.Clear();
-                foreach (var item in sourceList) FilteredChatList.Add(item);
+                    // 應用過濾條件 - 直接實現過濾邏輯
+                    if (ShowOnlyUnread) sourceList = sourceList.Where(chat => chat.HasUnreadMessages).ToList();
+
+                    if (ShowOnlyPinned) sourceList = sourceList.Where(chat => chat.IsPinned).ToList();
+
+                    // 更新顯示列表 - 回到 UI 線程執行
+                    InvokeOnMainThread(() =>
+                    {
+                        FilteredChatList.Clear();
+                        foreach (var item in sourceList) FilteredChatList.Add(item);
+                    });
+                });
             }
             catch (Exception ex)
             {

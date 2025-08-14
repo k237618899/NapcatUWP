@@ -72,6 +72,10 @@ namespace AnnaMessager.Core.Models
             set => SetProperty(ref _status, value);
         }
 
+        // UI 顯示屬性
+        public bool HasUnreadMessages => UnreadCount > 0;
+        public string UnreadCountDisplay => UnreadCount > 99 ? "99+" : UnreadCount.ToString();
+
         // 顯示用的時間格式
         public string DisplayTime
         {
@@ -93,23 +97,20 @@ namespace AnnaMessager.Core.Models
                 return LastTime.ToString("MM/dd");
             }
         }
-
-        // 未讀訊息顯示
-        public bool HasUnreadMessages => UnreadCount > 0;
-        public string UnreadCountDisplay => UnreadCount > 99 ? "99+" : UnreadCount.ToString();
-
-        public string DisplayLastMessage => LastMessage ?? "";
     }
 
     public class MessageItem : MvxNotifyPropertyChanged
     {
         private bool _isSelected;
         private MessageSendStatus _sendStatus;
+        private bool _showSenderName;
+        private bool _showTimeStamp;
 
         public MessageItem()
         {
             Segments = new List<MessageSegment>();
             SendStatus = MessageSendStatus.Sent;
+            Time = DateTime.Now;
         }
 
         public long MessageId { get; set; }
@@ -131,11 +132,37 @@ namespace AnnaMessager.Core.Models
         public MessageSendStatus SendStatus
         {
             get => _sendStatus;
-            set => SetProperty(ref _sendStatus, value);
+            set
+            {
+                SetProperty(ref _sendStatus, value);
+                // 通知狀態相關屬性變更
+                RaisePropertyChanged(() => IsSending);
+                RaisePropertyChanged(() => IsSent);
+                RaisePropertyChanged(() => IsFailed);
+            }
         }
 
+        public bool ShowTimeStamp
+        {
+            get => _showTimeStamp;
+            set => SetProperty(ref _showTimeStamp, value);
+        }
+
+        public bool ShowSenderName
+        {
+            get => _showSenderName;
+            set => SetProperty(ref _showSenderName, value);
+        }
+
+        // UI 顯示屬性
         public string DisplayTime => Time.ToString("HH:mm");
         public string DisplayDate => Time.ToString("yyyy年MM月dd日");
+
+        // 發送狀態相關屬性
+        public bool IsSending => SendStatus == MessageSendStatus.Sending;
+        public bool IsSent => SendStatus == MessageSendStatus.Sent;
+        public bool IsFailed => SendStatus == MessageSendStatus.Failed;
+        public bool IsRead => SendStatus == MessageSendStatus.Read;
     }
 
     public class ContactItem : MvxNotifyPropertyChanged
@@ -180,6 +207,9 @@ namespace AnnaMessager.Core.Models
 
         // 顯示名稱優先顯示備註
         public string DisplayName => !string.IsNullOrEmpty(Remark) ? Remark : Nickname;
+
+        // UI 需要的屬性
+        public bool HasRemark => !string.IsNullOrEmpty(Remark);
     }
 
     public class GroupItem : MvxNotifyPropertyChanged
@@ -257,5 +287,14 @@ namespace AnnaMessager.Core.Models
         Away,
         Busy,
         Offline
+    }
+
+    // 聊天過濾器
+    public class ChatFilter
+    {
+        public bool? HasUnreadMessages { get; set; }
+        public bool? IsPinned { get; set; }
+        public bool? IsMuted { get; set; }
+        public string SearchKeyword { get; set; }
     }
 }

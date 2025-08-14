@@ -30,7 +30,11 @@ namespace AnnaMessager.Core.ViewModels
         public ObservableCollection<GroupItem> Groups
         {
             get => _groups;
-            set => SetProperty(ref _groups, value);
+            set
+            {
+                SetProperty(ref _groups, value);
+                RaisePropertyChanged(() => IsEmpty);
+            }
         }
 
         public bool IsRefreshing
@@ -44,6 +48,9 @@ namespace AnnaMessager.Core.ViewModels
             get => _searchText;
             set => SetProperty(ref _searchText, value);
         }
+
+        // UI 顯示屬性
+        public bool IsEmpty => !IsRefreshing && (Groups == null || Groups.Count == 0);
 
         public ICommand OpenChatCommand { get; }
         public ICommand RefreshCommand { get; }
@@ -70,7 +77,9 @@ namespace AnnaMessager.Core.ViewModels
                         {
                             GroupId = group.GroupId,
                             GroupName = group.GroupName,
-                            MemberCount = group.MemberCount
+                            MemberCount = group.MemberCount,
+                            IsOwner = false, // 簡化處理
+                            IsAdmin = false // 簡化處理
                         });
                 }
             }
@@ -81,6 +90,7 @@ namespace AnnaMessager.Core.ViewModels
             finally
             {
                 IsRefreshing = false;
+                RaisePropertyChanged(() => IsEmpty);
             }
         }
 
@@ -96,8 +106,15 @@ namespace AnnaMessager.Core.ViewModels
             });
 
             // 通過 Mvx 解析主 ViewModel
-            var mainViewModel = Mvx.Resolve<MainViewModel>();
-            mainViewModel?.ChatListViewModel.AddOrUpdateChat(group.GroupId, true, group.GroupName);
+            try
+            {
+                var mainViewModel = Mvx.Resolve<MainViewModel>();
+                mainViewModel?.ChatListViewModel.AddOrUpdateChat(group.GroupId, true, group.GroupName);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"添加到聊天列表失敗: {ex.Message}");
+            }
         }
 
         private async Task RefreshAsync()
@@ -109,6 +126,7 @@ namespace AnnaMessager.Core.ViewModels
         {
             SearchText = searchText;
             // TODO: 實作搜尋功能
+            // 可以根據 searchText 過濾 Groups 集合
         }
     }
 }

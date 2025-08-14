@@ -1,32 +1,31 @@
 ﻿using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
-using AnnaMessager.Core.Models;
 using AnnaMessager.Core.ViewModels;
 using MvvmCross.Uwp.Views;
 
 namespace AnnaMessager.UWP.Views
 {
-    public sealed partial class ChatListView : MvxWindowsPage
+    public sealed partial class GroupsView : MvxWindowsPage
     {
-        public ChatListView()
+        public GroupsView()
         {
             InitializeComponent();
-            Loaded += ChatListView_Loaded;
+            Loaded += GroupsView_Loaded;
         }
 
-        public ChatListViewModel ViewModel => (ChatListViewModel)DataContext;
+        public new GroupsViewModel ViewModel => (GroupsViewModel)DataContext;
 
-        private void ChatListView_Loaded(object sender, RoutedEventArgs e)
+        private void GroupsView_Loaded(object sender, RoutedEventArgs e)
         {
-            // 頁面載入完成後的初始化工作
+            // 頁面載入時的初始化
         }
 
-        private void ChatListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void GroupsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (sender is ListView listView &&
-                listView.SelectedItem is ChatItem chatItem)
+                listView.SelectedItem is GroupItem groupItem)
             {
-                ViewModel?.OpenChatCommand?.Execute(chatItem);
+                ViewModel?.OpenChatCommand?.Execute(groupItem);
                 listView.SelectedIndex = -1; // 清除選擇狀態
             }
         }

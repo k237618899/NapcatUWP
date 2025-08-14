@@ -6,27 +6,27 @@ using MvvmCross.Uwp.Views;
 
 namespace AnnaMessager.UWP.Views
 {
-    public sealed partial class ChatListView : MvxWindowsPage
+    public sealed partial class ContactsView : MvxWindowsPage
     {
-        public ChatListView()
+        public ContactsView()
         {
             InitializeComponent();
-            Loaded += ChatListView_Loaded;
+            Loaded += ContactsView_Loaded;
         }
 
-        public ChatListViewModel ViewModel => (ChatListViewModel)DataContext;
+        public new ContactsViewModel ViewModel => (ContactsViewModel)DataContext;
 
-        private void ChatListView_Loaded(object sender, RoutedEventArgs e)
+        private void ContactsView_Loaded(object sender, RoutedEventArgs e)
         {
-            // 頁面載入完成後的初始化工作
+            // 頁面載入時的初始化
         }
 
-        private void ChatListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void ContactsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (sender is ListView listView &&
-                listView.SelectedItem is ChatItem chatItem)
+                listView.SelectedItem is ContactItem contactItem)
             {
-                ViewModel?.OpenChatCommand?.Execute(chatItem);
+                ViewModel?.OpenChatCommand?.Execute(contactItem);
                 listView.SelectedIndex = -1; // 清除選擇狀態
             }
         }

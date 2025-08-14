@@ -18,8 +18,11 @@ namespace AnnaMessager.Core.ViewModels
         private bool _autoReconnect;
         private int _connectionTimeout;
         private bool _enableSsl;
+        private bool _hasTestResult;
+        private bool _isSaving;
         private bool _isTestingConnection;
         private string _serverUrl;
+        private string _testResult;
 
         public ServerSettingsViewModel()
         {
@@ -68,6 +71,35 @@ namespace AnnaMessager.Core.ViewModels
             set => SetProperty(ref _isTestingConnection, value);
         }
 
+        // 為 UI 添加的新屬性
+        public bool IsTesting
+        {
+            get => _isTestingConnection;
+            set => SetProperty(ref _isTestingConnection, value);
+        }
+
+        public bool IsSaving
+        {
+            get => _isSaving;
+            set => SetProperty(ref _isSaving, value);
+        }
+
+        public string TestResult
+        {
+            get => _testResult;
+            set
+            {
+                SetProperty(ref _testResult, value);
+                HasTestResult = !string.IsNullOrEmpty(value);
+            }
+        }
+
+        public bool HasTestResult
+        {
+            get => _hasTestResult;
+            set => SetProperty(ref _hasTestResult, value);
+        }
+
         public ICommand SaveCommand { get; }
         public ICommand CancelCommand { get; }
         public ICommand TestConnectionCommand { get; }
@@ -83,17 +115,30 @@ namespace AnnaMessager.Core.ViewModels
             try
             {
                 var settings = await _settingsService.LoadServerSettingsAsync();
-                ServerUrl = settings.ServerUrl;
-                AccessToken = settings.AccessToken;
-                ConnectionTimeout = settings.ConnectionTimeout;
-                EnableSsl = settings.EnableSsl;
-                AutoReconnect = settings.AutoReconnect;
+                if (settings != null)
+                {
+                    ServerUrl = settings.ServerUrl ?? "ws://localhost:3001";
+                    AccessToken = settings.AccessToken ?? "";
+                    ConnectionTimeout = settings.ConnectionTimeout > 0 ? settings.ConnectionTimeout : 30;
+                    EnableSsl = settings.EnableSsl;
+                    AutoReconnect = settings.AutoReconnect;
+                }
+                else
+                {
+                    // 使用預設值
+                    ServerUrl = "ws://localhost:3001";
+                    AccessToken = "";
+                    ConnectionTimeout = 30;
+                    EnableSsl = false;
+                    AutoReconnect = true;
+                }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"載入伺服器設定失敗: {ex.Message}");
                 // 使用預設值
                 ServerUrl = "ws://localhost:3001";
+                AccessToken = "";
                 ConnectionTimeout = 30;
                 EnableSsl = false;
                 AutoReconnect = true;
@@ -104,10 +149,12 @@ namespace AnnaMessager.Core.ViewModels
         {
             try
             {
+                IsSaving = true;
+
                 var settings = new ServerSettings
                 {
-                    ServerUrl = ServerUrl,
-                    AccessToken = AccessToken,
+                    ServerUrl = ServerUrl?.Trim(),
+                    AccessToken = AccessToken?.Trim(),
                     ConnectionTimeout = ConnectionTimeout,
                     EnableSsl = EnableSsl,
                     AutoReconnect = AutoReconnect
@@ -116,17 +163,17 @@ namespace AnnaMessager.Core.ViewModels
                 await _settingsService.SaveServerSettingsAsync(settings);
                 Debug.WriteLine("伺服器設定已保存");
 
-                // 顯示保存成功通知
-                await _notificationService.ShowToastAsync("設定已保存", ToastType.Success);
-
+                // 關閉視窗
                 Close(this);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"保存伺服器設定失敗: {ex.Message}");
-
-                // 顯示保存失敗通知
-                await _notificationService.ShowToastAsync($"保存失敗: {ex.Message}", ToastType.Error);
+                TestResult = $"保存失敗: {ex.Message}";
+            }
+            finally
+            {
+                IsSaving = false;
             }
         }
 
@@ -134,37 +181,56 @@ namespace AnnaMessager.Core.ViewModels
         {
             try
             {
-                IsTestingConnection = true;
+                IsTesting = true;
+                TestResult = "";
+
+                if (string.IsNullOrWhiteSpace(ServerUrl))
+                {
+                    TestResult = "請輸入伺服器地址";
+                    return;
+                }
+
+                if (!IsValidWebSocketUrl(ServerUrl))
+                {
+                    TestResult = "無效的 WebSocket 地址格式，請使用 ws:// 或 wss://";
+                    return;
+                }
 
                 // 測試連接
                 var isConnected = await _oneBotService.ConnectAsync(ServerUrl, AccessToken);
 
                 if (isConnected)
                 {
+                    TestResult = "✓ 連接測試成功！伺服器回應正常";
                     Debug.WriteLine("連接測試成功");
 
-                    // 顯示成功通知
-                    await _notificationService.ShowToastAsync("連接測試成功", ToastType.Success);
+                    // 測試完成後斷開連接
+                    await _oneBotService.DisconnectAsync();
                 }
                 else
                 {
+                    TestResult = "✗ 連接測試失敗，請檢查伺服器地址和令牌";
                     Debug.WriteLine("連接測試失敗");
-
-                    // 顯示失敗通知
-                    await _notificationService.ShowToastAsync("連接測試失敗", ToastType.Error);
                 }
             }
             catch (Exception ex)
             {
+                TestResult = $"✗ 連接測試錯誤: {ex.Message}";
                 Debug.WriteLine($"測試連接失敗: {ex.Message}");
-
-                // 顯示錯誤通知
-                await _notificationService.ShowToastAsync($"連接測試錯誤: {ex.Message}", ToastType.Error);
             }
             finally
             {
-                IsTestingConnection = false;
+                IsTesting = false;
             }
+        }
+
+        private static bool IsValidWebSocketUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+                return false;
+
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                   (uri.Scheme == "ws" || uri.Scheme == "wss");
         }
     }
 }

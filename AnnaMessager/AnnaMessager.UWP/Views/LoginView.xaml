@@ -1,0 +1,238 @@
+﻿<views:MvxWindowsPage
+    x:Class="AnnaMessager.UWP.Views.LoginView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:MvvmCross.Uwp.Views"
+    xmlns:converters="using:AnnaMessager.UWP.Converters"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <views:MvxWindowsPage.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        
+        <!-- 登入頁面樣式 -->
+        <Style x:Key="LoginTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="32"/>
+            <Setter Property="FontWeight" Value="Light"/>
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        
+        <Style x:Key="LoginSubtitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        
+        <Style x:Key="LoginTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Margin" Value="0,8"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource SystemControlForegroundBaseLowBrush}"/>
+            <Setter Property="Background" Value="{ThemeResource SystemControlBackgroundAltHighBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+        
+        <Style x:Key="LoginPasswordBoxStyle" TargetType="PasswordBox">
+            <Setter Property="Margin" Value="0,8"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource SystemControlForegroundBaseLowBrush}"/>
+            <Setter Property="Background" Value="{ThemeResource SystemControlBackgroundAltHighBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+        
+        <Style x:Key="LoginButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="32,12"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="Margin" Value="0,16,0,8"/>
+        </Style>
+        
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="Margin" Value="0,8"/>
+        </Style>
+    </views:MvxWindowsPage.Resources>
+
+    <Grid>
+        <!-- 背景裝飾 -->
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#F8F9FA" Offset="0"/>
+                <GradientStop Color="#E9ECEF" Offset="1"/>
+            </LinearGradientBrush>
+        </Grid.Background>
+        
+        <!-- 主要內容區域 -->
+        <ScrollViewer HorizontalScrollBarVisibility="Hidden" 
+                      VerticalScrollBarVisibility="Auto"
+                      ZoomMode="Disabled">
+            <Grid HorizontalAlignment="Center" 
+                  VerticalAlignment="Center"
+                  Margin="20">
+                
+                <!-- 登入卡片 -->
+                <Border x:Name="LoginCard"
+                        Background="White"
+                        BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="40,48"
+                        Margin="0,60,0,0"
+                        MinWidth="360"
+                        MaxWidth="450">
+                    
+                    <StackPanel x:Name="LoginContent" 
+                                HorizontalAlignment="Stretch" 
+                                Width="350">
+                        <!-- Logo 區域 -->
+                        <StackPanel Margin="0,0,0,32" HorizontalAlignment="Center">
+                            <Ellipse Width="80" Height="80" 
+                                    Fill="{StaticResource PrimaryBrush}"
+                                    Margin="0,0,0,16">
+                            </Ellipse>
+                            
+                            <TextBlock Text="AnnaMessager"
+                                      Style="{StaticResource LoginTitleStyle}"/>
+                            
+                            <TextBlock Text="連接到您的機器人賬號"
+                                      Style="{StaticResource LoginSubtitleStyle}"
+                                      Margin="0,8,0,0"/>
+                        </StackPanel>
+
+                        <!-- 登入表單 -->
+                        <StackPanel Margin="0,16,0,0">
+                            <!-- 機器人 QQ 號 -->
+                            <StackPanel Margin="0,0,0,16">
+                                <TextBlock Text="機器人 QQ 號"
+                                          FontWeight="SemiBold"
+                                          Margin="0,0,0,4"
+                                          HorizontalAlignment="Left"/>
+                                <TextBox x:Name="AccountTextBox"
+                                        Text="{Binding Account, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="請輸入機器人 QQ 號"
+                                        Style="{StaticResource LoginTextBoxStyle}"
+                                        InputScope="Number"/>
+                            </StackPanel>
+
+                            <!-- 存取令牌 -->
+                            <StackPanel Margin="0,0,0,16">
+                                <TextBlock Text="存取令牌"
+                                          FontWeight="SemiBold"
+                                          Margin="0,0,0,4"
+                                          HorizontalAlignment="Left"/>
+                                <PasswordBox x:Name="AccessTokenPasswordBox"
+                                           Password="{Binding AccessToken, Mode=TwoWay}"
+                                           PlaceholderText="輸入您的存取令牌"
+                                           Style="{StaticResource LoginPasswordBoxStyle}"/>
+                            </StackPanel>
+
+                            <!-- 選項 -->
+                            <CheckBox Content="記住登入資訊"
+                                     IsChecked="{Binding RememberCredentials, Mode=TwoWay}"
+                                     Margin="0,8,0,16"
+                                     HorizontalAlignment="Left"/>
+
+                            <!-- 登入按鈕 -->
+                            <Button Content="登入"
+                                   Command="{Binding LoginCommand}"
+                                   IsEnabled="{Binding CanLogin}"
+                                   Style="{StaticResource LoginButtonStyle}"/>
+
+                            <!-- 狀態顯示 -->
+                            <StackPanel Visibility="{Binding IsLogging, Converter={StaticResource BoolToVisibilityConverter}}"
+                                       Margin="0,16,0,0"
+                                       HorizontalAlignment="Center">
+                                <ProgressRing IsActive="True" 
+                                             Width="24" Height="24"
+                                             HorizontalAlignment="Center"/>
+                                <TextBlock Text="{Binding LoginStatus}"
+                                          HorizontalAlignment="Center"
+                                          Margin="0,8,0,0"
+                                          FontSize="14"
+                                          Foreground="{StaticResource PrimaryBrush}"/>
+                            </StackPanel>
+
+                            <!-- 錯誤狀態 -->
+                            <Border Background="#FFEBEE"
+                                   BorderBrush="#F44336"
+                                   BorderThickness="1"
+                                   CornerRadius="4"
+                                   Padding="12,8"
+                                   Margin="0,16,0,0"
+                                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <TextBlock Text="{Binding LoginStatus}"
+                                          Foreground="#C62828"
+                                          FontSize="14"
+                                          TextWrapping="Wrap"/>
+                            </Border>
+
+                            <!-- 其他選項 -->
+                            <StackPanel Margin="0,16,0,0">
+                                <Button Content="伺服器設定"
+                                       Command="{Binding OpenServerSettingsCommand}"
+                                       Style="{StaticResource SecondaryButtonStyle}"
+                                       Margin="0,8,0,0"/>
+                                       
+                                <HyperlinkButton Content="需要幫助？"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,8,0,0"
+                                               FontSize="14"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 底部資訊 -->
+                <StackPanel VerticalAlignment="Bottom" 
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,20">
+                    <TextBlock Text="AnnaMessager v1.0"
+                              FontSize="12"
+                              Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                              HorizontalAlignment="Center"/>
+                    <TextBlock Text="基於 OneBot 標準的即時通訊應用"
+                              FontSize="12"
+                              Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}"
+                              HorizontalAlignment="Center"
+                              Margin="0,4,0,0"/>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+        
+        <!-- 移動端適配的視覺狀態 -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="WindowStates">
+                <VisualState x:Name="WideState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="640"/>
+                    </VisualState.StateTriggers>
+                </VisualState>
+                
+                <VisualState x:Name="NarrowState">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="LoginCard.MinWidth" Value="320"/>
+                        <Setter Target="LoginCard.MaxWidth" Value="380"/>
+                        <Setter Target="LoginCard.Margin" Value="10"/>
+                        <Setter Target="LoginCard.Padding" Value="20,32"/>
+                        <Setter Target="LoginContent.Width" Value="280"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+    </Grid>
+</views:MvxWindowsPage>

@@ -1,0 +1,286 @@
+﻿<views:MvxWindowsPage
+    x:Class="AnnaMessager.UWP.Views.ChatView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:MvvmCross.Uwp.Views"
+    xmlns:converters="using:AnnaMessager.UWP.Converters"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <views:MvxWindowsPage.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        
+        <!-- 簡化的消息樣式 -->
+        <Style x:Key="MessageBubbleStyle" TargetType="Border">
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="8,4"/>
+            <Setter Property="MaxWidth" Value="300"/>
+        </Style>
+        
+        <Style x:Key="SelfMessageStyle" TargetType="Border" BasedOn="{StaticResource MessageBubbleStyle}">
+            <Setter Property="Background" Value="#FF0078D4"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+        
+        <Style x:Key="OtherMessageStyle" TargetType="Border" BasedOn="{StaticResource MessageBubbleStyle}">
+            <Setter Property="Background" Value="#FFF0F0F0"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        
+        <Style x:Key="MessageTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        
+        <Style x:Key="SelfMessageTextStyle" TargetType="TextBlock" BasedOn="{StaticResource MessageTextStyle}">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        
+        <Style x:Key="OtherMessageTextStyle" TargetType="TextBlock" BasedOn="{StaticResource MessageTextStyle}">
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
+        
+        <!-- 簡化的輸入框樣式 -->
+        <Style x:Key="InputTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="Gray"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="16,12"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="PlaceholderText" Value="輸入訊息..."/>
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="MaxHeight" Value="120"/>
+        </Style>
+        
+        <!-- 簡化的發送按鈕樣式 -->
+        <Style x:Key="SendButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FF0078D4"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="Content" Value="&#xE724;"/>
+        </Style>
+    </views:MvxWindowsPage.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 標題欄 -->
+        <Border Grid.Row="0" 
+                Background="#FF0078D4"
+                Padding="16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 返回按鈕 -->
+                <Button Grid.Column="0"
+                        Background="Transparent"
+                        Foreground="White"
+                        BorderBrush="Transparent"
+                        FontFamily="Segoe MDL2 Assets"
+                        Content="&#xE72B;"
+                        FontSize="16"
+                        Width="40"
+                        Height="40"
+                        Click="BackButton_Click"/>
+
+                <!-- 聊天信息 -->
+                <StackPanel Grid.Column="1" 
+                           Margin="16,0,0,0"
+                           VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ChatTitle}"
+                              Foreground="White"
+                              FontSize="16"
+                              FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding OnlineStatus}"
+                              Foreground="White"
+                              FontSize="12"/>
+                </StackPanel>
+
+                <!-- 更多選項 -->
+                <Button Grid.Column="2"
+                        Background="Transparent"
+                        Foreground="White"
+                        BorderBrush="Transparent"
+                        FontFamily="Segoe MDL2 Assets"
+                        Content="&#xE712;"
+                        FontSize="16"
+                        Width="40"
+                        Height="40">
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="聊天信息"/>
+                            <MenuFlyoutItem Text="清空聊天記錄"/>
+                            <MenuFlyoutSeparator/>
+                            <MenuFlyoutItem Text="靜音通知"/>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- 消息列表 -->
+        <ScrollViewer Grid.Row="1" 
+                      x:Name="MessagesScrollViewer"
+                      Background="White"
+                      Padding="16,8"
+                      VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Messages}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,4">
+                            <!-- 時間分隔線 -->
+                            <Border Background="#FFF0F0F0"
+                                   Padding="8,4"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,16,0,8"
+                                   Visibility="{Binding ShowTimeStamp, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <TextBlock Text="{Binding DisplayDate}"
+                                          FontSize="12"
+                                          Foreground="Gray"/>
+                            </Border>
+
+                            <!-- 消息內容 -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 他人消息 -->
+                                <StackPanel Grid.Column="0"
+                                           Visibility="{Binding IsFromSelf, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}">
+                                    <!-- 發送者名稱（群聊時顯示） -->
+                                    <TextBlock Text="{Binding SenderName}"
+                                              FontSize="12"
+                                              Foreground="Gray"
+                                              Margin="16,0,0,4"
+                                              Visibility="{Binding ShowSenderName, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                    
+                                    <Border Style="{StaticResource OtherMessageStyle}">
+                                        <TextBlock Text="{Binding Content}"
+                                                  Style="{StaticResource OtherMessageTextStyle}"/>
+                                    </Border>
+                                    
+                                    <!-- 消息時間 -->
+                                    <TextBlock Text="{Binding DisplayTime}"
+                                              FontSize="10"
+                                              Foreground="Gray"
+                                              Margin="16,0,0,0"/>
+                                </StackPanel>
+
+                                <!-- 自己的消息 -->
+                                <StackPanel Grid.Column="1"
+                                           Visibility="{Binding IsFromSelf, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <Border Style="{StaticResource SelfMessageStyle}">
+                                        <TextBlock Text="{Binding Content}"
+                                                  Style="{StaticResource SelfMessageTextStyle}"/>
+                                    </Border>
+                                    
+                                    <!-- 消息狀態和時間 -->
+                                    <StackPanel Orientation="Horizontal"
+                                               HorizontalAlignment="Right"
+                                               Margin="0,0,16,0">
+                                        <TextBlock Text="{Binding DisplayTime}"
+                                                  FontSize="10"
+                                                  Foreground="Gray"
+                                                  Margin="0,0,4,0"/>
+                                        
+                                        <!-- 發送狀態圖標 -->
+                                        <TextBlock Text="✓" 
+                                                 FontSize="10"
+                                                 Foreground="Green"
+                                                 Visibility="{Binding IsSent, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        
+                                        <TextBlock Text="✗" 
+                                                 FontSize="10"
+                                                 Foreground="Red"
+                                                 Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                 
+                                        <ProgressRing Width="12" Height="12"
+                                                     IsActive="True"
+                                                     Visibility="{Binding IsSending, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- 輸入區域 -->
+        <Border Grid.Row="2" 
+                Background="White"
+                BorderBrush="Gray"
+                BorderThickness="0,1,0,0"
+                Padding="16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 附件按鈕 -->
+                <Button Grid.Column="0"
+                        Background="Transparent"
+                        BorderBrush="Transparent"
+                        FontFamily="Segoe MDL2 Assets"
+                        Content="&#xE723;"
+                        FontSize="18"
+                        Width="40"
+                        Height="40"
+                        Margin="0,0,8,0"
+                        Click="AttachmentButton_Click">
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="圖片"/>
+                            <MenuFlyoutItem Text="文件"/>
+                            <MenuFlyoutItem Text="位置"/>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+
+                <!-- 輸入框 -->
+                <TextBox Grid.Column="1"
+                         x:Name="MessageTextBox"
+                         Text="{Binding InputMessage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBoxStyle}"
+                         KeyDown="MessageTextBox_KeyDown"/>
+
+                <!-- 發送按鈕 -->
+                <Button Grid.Column="2"
+                        Style="{StaticResource SendButtonStyle}"
+                        Command="{Binding SendMessageCommand}"
+                        IsEnabled="{Binding CanSendMessage}"
+                        Margin="8,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <!-- 載入指示器 -->
+        <Grid Grid.Row="1"
+              Background="White"
+              Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center"
+                       VerticalAlignment="Center">
+                <ProgressRing Width="40" Height="40" IsActive="True"/>
+                <TextBlock Text="載入訊息..."
+                          FontSize="14"
+                          Foreground="Gray"
+                          HorizontalAlignment="Center"
+                          Margin="0,8,0,0"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</views:MvxWindowsPage>

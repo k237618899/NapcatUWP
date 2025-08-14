@@ -51,6 +51,8 @@
     <Compile Include="Services\IUserInteractionService.cs" />
     <Compile Include="Services\OneBotService.cs" />
     <Compile Include="Services\OneBotServiceExtensions.cs" />
+    <Compile Include="Services\SimpleCacheManager.cs" />
+    <Compile Include="Services\SimpleSettingsService.cs" />
     <Compile Include="ViewModels\ChatListViewModel.cs" />
     <Compile Include="ViewModels\ChatViewModel.cs" />
     <Compile Include="ViewModels\ContactsViewModel.cs" />
