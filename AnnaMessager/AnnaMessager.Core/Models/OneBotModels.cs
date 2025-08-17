@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace AnnaMessager.Core.Models
 {
@@ -57,7 +58,8 @@ namespace AnnaMessager.Core.Models
 
         [JsonProperty("user_id")] public long UserId { get; set; }
 
-        [JsonProperty("message")] public string Message { get; set; }
+        // NapCat/OneBot 在 message_format = "array" 時此欄位為陣列，否則為字串
+        [JsonProperty("message")] public JToken MessageToken { get; set; }
 
         [JsonProperty("raw_message")] public string RawMessage { get; set; }
 
@@ -69,6 +71,84 @@ namespace AnnaMessager.Core.Models
         [JsonProperty("group_id")] public long? GroupId { get; set; }
 
         [JsonProperty("anonymous")] public AnonymousInfo Anonymous { get; set; }
+
+        // 兼容舊程式碼使用的 Message 文字內容
+        [JsonIgnore]
+        public string Message
+        {
+            get
+            {
+                if (MessageToken == null) return string.Empty;
+                if (MessageToken.Type == JTokenType.String || MessageToken.Type == JTokenType.Integer ||
+                    MessageToken.Type == JTokenType.Float)
+                    return MessageToken.ToString();
+                if (MessageToken.Type == JTokenType.Array)
+                {
+                    var parts = new List<string>();
+                    foreach (var seg in MessageToken as JArray)
+                    {
+                        var type = seg["type"]?.ToString();
+                        var data = seg["data"] as JObject;
+                        if (type == "text")
+                        {
+                            var text = data?["text"]?.ToString();
+                            if (!string.IsNullOrEmpty(text)) parts.Add(text);
+                        }
+                        else if (type == "image")
+                        {
+                            // 圖片顯示簡短標記，可根據需要更換
+                            var summary = data?["summary"]?.ToString();
+                            parts.Add(!string.IsNullOrEmpty(summary) ? summary : "[圖片]");
+                        }
+                        else if (type == "face")
+                        {
+                            parts.Add("[表情]");
+                        }
+                        else if (type == "at")
+                        {
+                            var qq = data?["qq"]?.ToString();
+                            parts.Add(!string.IsNullOrEmpty(qq) ? $"@{qq}" : "@?");
+                        }
+                        else
+                        {
+                            parts.Add($"[{type}]");
+                        }
+                    }
+                    return string.Join(string.Empty, parts);
+                }
+                return MessageToken.ToString();
+            }
+        }
+
+        [JsonIgnore]
+        public List<MessageSegment> Segments
+        {
+            get
+            {
+                var list = new List<MessageSegment>();
+                if (MessageToken == null || MessageToken.Type != JTokenType.Array) return list;
+                foreach (var seg in MessageToken as JArray)
+                {
+                    try
+                    {
+                        var type = seg["type"]?.ToString() ?? "unknown";
+                        var dataObj = seg["data"] as JObject;
+                        var dataDict = new Dictionary<string, object>();
+                        if (dataObj != null)
+                        {
+                            foreach (var p in dataObj.Properties()) dataDict[p.Name] = p.Value.Type == JTokenType.String ? (object)p.Value.ToString() : p.Value.ToString();
+                        }
+                        var ms = new MessageSegment(type) { Data = dataDict };
+                        list.Add(ms);
+                    }
+                    catch
+                    {
+                        // 忽略單個段解析錯誤
+                    }
+                }
+                return list;
+            }
+        }
     }
 
     // 通知事件
@@ -194,6 +274,8 @@ namespace AnnaMessager.Core.Models
         [JsonProperty("time")] public long Time { get; set; }
 
         [JsonProperty("message")] public string Message { get; set; }
+
+        [JsonProperty("message_seq")] public long MessageSeq { get; set; } // 新增: 用於翻頁
     }
 
     public class MessageHistoryData
@@ -205,18 +287,62 @@ namespace AnnaMessager.Core.Models
     public class MessageHistoryItem
     {
         [JsonProperty("message_id")] public long MessageId { get; set; }
-
         [JsonProperty("real_id")] public long RealId { get; set; }
-
         [JsonProperty("sender")] public MessageSender Sender { get; set; }
-
         [JsonProperty("time")] public long Time { get; set; }
 
-        [JsonProperty("message")] public string Message { get; set; }
-
+        // NapCat 可能返回陣列 (segments) 或字串，改為使用 JToken
+        [JsonProperty("message")] public JToken MessageToken { get; set; }
         [JsonProperty("raw_message")] public string RawMessage { get; set; }
+        [JsonProperty("message_seq")] public long MessageSeq { get; set; } // 新增: 序列號
 
-        // 修正：使用 PCL 兼容的方式轉換 Unix 時間戳
+        // 轉換統一文字顯示 (複用 MessageEvent 的邏輯精簡版)
+        [JsonIgnore]
+        public string Message
+        {
+            get
+            {
+                try
+                {
+                    if (MessageToken == null) return RawMessage ?? string.Empty;
+                    if (MessageToken.Type == JTokenType.String || MessageToken.Type == JTokenType.Integer || MessageToken.Type == JTokenType.Float)
+                        return MessageToken.ToString();
+                    if (MessageToken.Type == JTokenType.Array)
+                    {
+                        var parts = new List<string>();
+                        foreach (var seg in MessageToken as JArray)
+                        {
+                            var type = seg["type"]?.ToString();
+                            var data = seg["data"] as JObject;
+                            switch (type)
+                            {
+                                case "text":
+                                    var text = data?["text"]?.ToString();
+                                    if (!string.IsNullOrEmpty(text)) parts.Add(text);
+                                    break;
+                                case "image":
+                                    parts.Add("[圖片]");
+                                    break;
+                                case "face":
+                                    parts.Add("[表情]");
+                                    break;
+                                case "at":
+                                    var qq = data?["qq"]?.ToString();
+                                    parts.Add(!string.IsNullOrEmpty(qq) ? $"@{qq}" : "@?");
+                                    break;
+                                default:
+                                    parts.Add($"[{type}]");
+                                    break;
+                            }
+                        }
+                        return string.Join(string.Empty, parts);
+                    }
+                }
+                catch { }
+                return RawMessage ?? MessageToken?.ToString() ?? string.Empty;
+            }
+        }
+
         public DateTime DateTime
         {
             get
@@ -244,8 +370,8 @@ namespace AnnaMessager.Core.Models
         [JsonProperty("messages")] public List<MessageHistoryItem> Messages { get; set; }
     }
 
-    // 文件信息
-    public class FileInfo
+    // 文件信息 - 注意：這裡使用 OneBotFileInfo 避免與 Core.Models.FileInfo 衝突
+    public class OneBotFileInfo
     {
         [JsonProperty("file_id")] public string FileId { get; set; }
 
@@ -320,7 +446,15 @@ namespace AnnaMessager.Core.Models
         [JsonProperty("total_file_count")] public int TotalFileCount { get; set; }
     }
 
-    // 登录信息
+    // 登录信息 - 注意：重命名避免與 LoginInfo 衝突
+    public class LoginInfoData
+    {
+        [JsonProperty("user_id")] public long UserId { get; set; }
+
+        [JsonProperty("nickname")] public string Nickname { get; set; }
+    }
+
+    // 保留原有的 LoginInfo 類以確保兼容性
     public class LoginInfo
     {
         [JsonProperty("user_id")] public long UserId { get; set; }
@@ -443,4 +577,32 @@ namespace AnnaMessager.Core.Models
         public string QQ => Data.ContainsKey("qq") ? Data["qq"]?.ToString() ?? "" : "";
         public bool IsAtAll => QQ == "all";
     }
+
+    // 朋友分組信息 (get_friends_with_category)
+    public class FriendCategoryItem
+    {
+        // 兩種不同字段命名 (舊: category_id, 新: categoryId)
+        [JsonProperty("category_id")] public long? CategoryIdLegacy { get; set; }
+        [JsonProperty("categoryId")] public long? CategoryIdNew { get; set; }
+
+        [JsonProperty("category_name")] public string CategoryNameLegacy { get; set; }
+        [JsonProperty("categoryName")] public string CategoryNameNew { get; set; }
+
+        // 分組排序 ID (舊/新)
+        [JsonProperty("category_sort_id")] public int? CategorySortIdLegacy { get; set; }
+        [JsonProperty("categorySortId")] public int? CategorySortIdNew { get; set; }
+
+        // 朋友列表兩種命名 (friends / buddyList)
+        [JsonProperty("friends")] public List<FriendInfo> FriendsLegacy { get; set; }
+        [JsonProperty("buddyList")] public List<FriendInfo> BuddyList { get; set; }
+
+        // 統一訪問屬性
+        [JsonIgnore] public long CategoryId => CategoryIdLegacy ?? CategoryIdNew ?? 0;
+        [JsonIgnore] public string CategoryName => !string.IsNullOrEmpty(CategoryNameLegacy) ? CategoryNameLegacy : CategoryNameNew;
+        [JsonIgnore] public List<FriendInfo> Friends => FriendsLegacy ?? BuddyList ?? new List<FriendInfo>();
+        [JsonIgnore] public int SortOrderRaw => CategorySortIdLegacy ?? CategorySortIdNew ?? int.MaxValue;
+        [JsonIgnore] public int FinalSortOrder => CategoryName == "特别关心" ? int.MinValue : SortOrderRaw;
+    }
+
+    // 移除舊 RecentContact 定義，改用 ChatModels.cs 中擴展版本
 }

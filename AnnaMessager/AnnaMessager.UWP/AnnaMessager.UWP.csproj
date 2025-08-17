@@ -90,25 +90,49 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- A reference to the entire .Net Framework and Windows SDK are automatically included -->
+    <Content Include="Assets\Background\%28他%29かわいく決めポーズ♪ 真壁瑞希-b.png" />
+    <Content Include="Assets\Background\BELIEVE MY DREAM 望月杏奈.png" />
+    <Content Include="Assets\Background\Dreaming！ 望月杏奈.png" />
+    <Content Include="Assets\Background\Happy Darling 望月杏奈.png" />
+    <Content Include="Assets\Background\HAPPY PERFORMANCE 望月杏奈.png" />
+    <Content Include="Assets\Background\VIVID イマジネーション 望月杏奈.png" />
+    <Content Include="Assets\Background\アイドル 望月杏奈.png" />
+    <Content Include="Assets\Background\ビビッとアイドル！ 望月杏奈.png" />
+    <Content Include="Assets\Background\メロンポップグリーン 望月杏奈.png" />
+    <Content Include="Assets\Background\聖剣覚醒 望月杏奈.png" />
+    <Content Include="Assets\Background\覚醒ステージ 望月杏奈.png" />
+    <Content Include="Assets\Font.ttf" />
     <None Include="project.json" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Converters\BooleanInverterConverter.cs" />
+    <Compile Include="Converters\BooleanToChevronGlyphConverter.cs" />
     <Compile Include="Converters\BooleanToVisibilityConverter.cs" />
     <Compile Include="Converters\EmptyListToVisibilityConverter.cs" />
     <Compile Include="Converters\FirstLetterConverter.cs" />
+    <Compile Include="Converters\PinnedBackgroundConverter.cs" />
     <Compile Include="Converters\SavingTextConverter.cs" />
+    <Compile Include="Converters\SegmentConverters.cs" />
+    <Compile Include="Converters\StringNullOrEmptyToVisibilityConverter.cs" />
     <Compile Include="Converters\TestingTextConverter.cs" />
     <Compile Include="Converters\TestResultToColorConverter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\UwpAvatarCacheService.cs" />
+    <Compile Include="Services\UwpCacheManager.cs" />
+    <Compile Include="Services\UwpDatabaseService.cs" />
     <Compile Include="Services\UwpNotificationService.cs" />
+    <Compile Include="Services\UwpPlatformSettingsService.cs" />
     <Compile Include="Services\UwpSettingsService.cs" />
     <Compile Include="Services\UwpUserInteractionService.cs" />
     <Compile Include="Setup.cs" />
     <Compile Include="Views\ChatListView.xaml.cs">
       <DependentUpon>ChatListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ChatRoomView.xaml.cs">
+      <DependentUpon>ChatRoomView.xaml</DependentUpon>
     </Compile>
     <Compile Include="Views\ChatView.xaml.cs">
       <DependentUpon>ChatView.xaml</DependentUpon>
@@ -169,6 +193,10 @@
     <Page Include="Views\ChatListView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\ChatRoomView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
     </Page>
     <Page Include="Views\ChatView.xaml">
       <Generator>MSBuild:Compile</Generator>

@@ -22,6 +22,10 @@ namespace AnnaMessager.Core.ViewModels
         private bool _isLoading;
         private int _selectedTabIndex;
         private string _userStatus;
+        private long _currentUserId;
+        private bool _initializedFromParams;
+        private string _serverUrl;
+        private string _connectionIndicatorColor = "LightGray"; // Red/Yellow/Green
 
         public MainViewModel(IOneBotService oneBotService)
         {
@@ -45,6 +49,9 @@ namespace AnnaMessager.Core.ViewModels
             IsLoading = true;
             ConnectionStatus = "正在連接...";
             UserStatus = "在線";
+            CurrentUserAvatar = null; // 先為空，XAML 會顯示首字母
+
+            Debug.WriteLine("[MainViewModel] 建構子執行");
         }
 
         public ChatListViewModel ChatListViewModel { get; }
@@ -111,59 +118,141 @@ namespace AnnaMessager.Core.ViewModels
             set => SetProperty(ref _userStatus, value);
         }
 
+        public long CurrentUserId
+        {
+            get => _currentUserId;
+            set => SetProperty(ref _currentUserId, value);
+        }
+
+        public string ServerUrl
+        {
+            get => _serverUrl;
+            set => SetProperty(ref _serverUrl, value);
+        }
+
+        public string ConnectionIndicatorColor
+        {
+            get => _connectionIndicatorColor;
+            set => SetProperty(ref _connectionIndicatorColor, value);
+        }
+
         public override async Task Initialize()
         {
             await base.Initialize();
+            if (string.IsNullOrEmpty(ServerUrl) && _oneBotService?.CurrentServerUrl != null)
+                ServerUrl = _oneBotService.CurrentServerUrl;
+
+            Debug.WriteLine("MainViewModel Initialize 開始");
+            Debug.WriteLine("[MainViewModel] Initialize 觸發, ChatList 項目數=" + (ChatListViewModel?.ChatList?.Count ?? 0));
+            // 初始化子 ViewModel（確保其 Initialize 被呼叫）
+            if (ChatListViewModel != null)
+            {
+                Debug.WriteLine("初始化 ChatListViewModel");
+                await ChatListViewModel.Initialize();
+            }
+            if (ContactsViewModel != null)
+            {
+                Debug.WriteLine("初始化 ContactsViewModel");
+                await ContactsViewModel.Initialize();
+            }
+            if (GroupsViewModel != null)
+            {
+                Debug.WriteLine("初始化 GroupsViewModel");
+                await GroupsViewModel.Initialize();
+            }
+            if (SettingsViewModel != null)
+            {
+                Debug.WriteLine("初始化 SettingsViewModel");
+                await SettingsViewModel.Initialize();
+            }
             await LoadUserInfoAsync();
+            Debug.WriteLine("MainViewModel Initialize 完成");
         }
 
         private void OnConnectionStatusChanged(object sender, bool isConnected)
         {
+            if (string.IsNullOrEmpty(ServerUrl) && _oneBotService?.CurrentServerUrl != null)
+                ServerUrl = _oneBotService.CurrentServerUrl;
+
             IsConnected = isConnected;
             HasConnectionError = !isConnected;
 
             if (isConnected)
             {
-                ConnectionStatus = "已連接";
+                ConnectionStatus = string.IsNullOrEmpty(ServerUrl) ? "連線正常" : $"連線正常 {ServerUrl}";
                 UserStatus = "在線";
                 ConnectionErrorMessage = null;
                 IsLoading = false;
+                ConnectionIndicatorColor = "LimeGreen";
             }
             else
             {
-                ConnectionStatus = "連接已中斷";
+                ConnectionStatus = "連線中斷";
                 UserStatus = "離線";
-                ConnectionErrorMessage = "與服務器的連接已中斷，某些功能可能無法正常使用";
+                ConnectionErrorMessage = "與服務器的連線已中斷";
+                ConnectionIndicatorColor = "OrangeRed";
             }
 
             RaisePropertyChanged(() => UserName);
+
+            if (isConnected)
+            {
+                // 連線成功後如果尚未載入使用者資訊則自動載入
+                if (string.IsNullOrEmpty(CurrentUserName))
+                {
+                    // 嘗試再載入一次使用者資訊
+                    Task.Run(async () => await LoadUserInfoAsync());
+                }
+            }
+        }
+
+        public void Init(long userId, string nickname)
+        {
+            try
+            {
+                Debug.WriteLine($"[MainViewModel] Init 參數: userId={userId}, nickname={nickname}");
+                if (userId > 0)
+                {
+                    CurrentUserId = userId;
+                    CurrentUserName = string.IsNullOrEmpty(nickname) ? userId.ToString() : nickname;
+                    CurrentUserAvatar = $"https://q1.qlogo.cn/g?b=qq&nk={userId}&s=640";
+                    _initializedFromParams = true;
+                    IsLoading = false;
+                    if (string.IsNullOrEmpty(ServerUrl) && _oneBotService?.CurrentServerUrl != null)
+                        ServerUrl = _oneBotService.CurrentServerUrl;
+                    ConnectionStatus = string.IsNullOrEmpty(ServerUrl) ? "連線正常" : $"連線正常 {ServerUrl}";
+                    ConnectionIndicatorColor = "LimeGreen";
+                    UserStatus = "在線";
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Init 參數初始化失敗: {ex.Message}");
+            }
+
+            Debug.WriteLine("[MainViewModel] Init 參數初始化完成");
         }
 
         private async Task LoadUserInfoAsync()
         {
             try
             {
+                Debug.WriteLine("[MainViewModel] LoadUserInfoAsync 開始");
                 IsLoading = true;
+
+                if (_initializedFromParams && CurrentUserId > 0)
+                {
+                    // 已經由導航參數初始化，跳過遠程請求
+                    IsLoading = false;
+                    return;
+                }
 
                 var loginInfo = await _oneBotService.GetLoginInfoAsync();
                 if (loginInfo?.Status == "ok" && loginInfo.Data != null)
                 {
                     CurrentUserName = loginInfo.Data.Nickname;
-
-                    // 嘗試獲取用戶頭像（如果 API 支持）
-                    try
-                    {
-                        var strangerInfo = await _oneBotService.GetStrangerInfoAsync(loginInfo.Data.UserId);
-                        if (strangerInfo?.Status == "ok" && strangerInfo.Data != null)
-                        {
-                            // 如果有頭像 URL，可以在這裡設置
-                            // CurrentUserAvatar = strangerInfo.Data.AvatarUrl;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"獲取用戶頭像失敗: {ex.Message}");
-                    }
+                    CurrentUserId = loginInfo.Data.UserId;
+                    CurrentUserAvatar = $"https://q1.qlogo.cn/g?b=qq&nk={loginInfo.Data.UserId}&s=640";
                 }
                 else
                 {
@@ -180,6 +269,7 @@ namespace AnnaMessager.Core.ViewModels
             finally
             {
                 IsLoading = false;
+                Debug.WriteLine("[MainViewModel] LoadUserInfoAsync 結束");
             }
         }
 
@@ -225,6 +315,7 @@ namespace AnnaMessager.Core.ViewModels
                 IsLoading = true;
                 HasConnectionError = false;
                 ConnectionStatus = "正在重新連接...";
+                ConnectionIndicatorColor = "Gold";
 
                 // 這裡需要重新獲取連接參數，可能需要從設置服務中讀取
                 // 暫時先嘗試重新連接現有的連接

@@ -30,9 +30,21 @@ namespace AnnaMessager.Core.ViewModels
             _oneBotService = Mvx.Resolve<IOneBotService>();
             _notificationService = Mvx.Resolve<INotificationService>();
 
+            Debug.WriteLine(
+                $"ServerSettingsViewModel 使用的 ISettingsService 型別: {_settingsService.GetType().FullName}");
+
             SaveCommand = new MvxCommand(async () => await SaveAsync());
             CancelCommand = new MvxCommand(() => Close(this));
             TestConnectionCommand = new MvxCommand(async () => await TestConnectionAsync());
+
+            // 預設值
+            ServerUrl = "ws://localhost:3001";
+            AccessToken = "";
+            ConnectionTimeout = 30;
+            EnableSsl = false;
+            AutoReconnect = true;
+
+            Debug.WriteLine("ServerSettingsViewModel 構造函數完成");
         }
 
         public string ServerUrl
@@ -106,25 +118,44 @@ namespace AnnaMessager.Core.ViewModels
 
         public override async Task Initialize()
         {
+            Debug.WriteLine("ServerSettingsViewModel Initialize 開始");
             await base.Initialize();
             await LoadSettingsAsync();
+            Debug.WriteLine("ServerSettingsViewModel Initialize 完成");
+        }
+
+        // 添加 Start 方法作為備選的初始化方法
+        public override void Start()
+        {
+            base.Start();
+            Debug.WriteLine("ServerSettingsViewModel Start 調用");
+            // 如果 Initialize 沒有被調用，在 Start 中載入設定
+            Task.Run(async () => await LoadSettingsAsync());
         }
 
         private async Task LoadSettingsAsync()
         {
             try
             {
+                Debug.WriteLine("開始載入伺服器設定...");
                 var settings = await _settingsService.LoadServerSettingsAsync();
                 if (settings != null)
                 {
+                    Debug.WriteLine(
+                        $"載入到的設定: ServerUrl={settings.ServerUrl}, AccessToken={settings.AccessToken?.Length ?? 0} 字符, ConnectionTimeout={settings.ConnectionTimeout}, EnableSsl={settings.EnableSsl}, AutoReconnect={settings.AutoReconnect}");
+
                     ServerUrl = settings.ServerUrl ?? "ws://localhost:3001";
                     AccessToken = settings.AccessToken ?? "";
                     ConnectionTimeout = settings.ConnectionTimeout > 0 ? settings.ConnectionTimeout : 30;
                     EnableSsl = settings.EnableSsl;
                     AutoReconnect = settings.AutoReconnect;
+
+                    Debug.WriteLine(
+                        $"設定屬性後: ServerUrl={ServerUrl}, AccessToken={AccessToken?.Length ?? 0} 字符, ConnectionTimeout={ConnectionTimeout}, EnableSsl={EnableSsl}, AutoReconnect={AutoReconnect}");
                 }
                 else
                 {
+                    Debug.WriteLine("沒有載入到設定，使用預設值");
                     // 使用預設值
                     ServerUrl = "ws://localhost:3001";
                     AccessToken = "";
@@ -136,6 +167,7 @@ namespace AnnaMessager.Core.ViewModels
             catch (Exception ex)
             {
                 Debug.WriteLine($"載入伺服器設定失敗: {ex.Message}");
+                Debug.WriteLine($"錯誤詳情: {ex.StackTrace}");
                 // 使用預設值
                 ServerUrl = "ws://localhost:3001";
                 AccessToken = "";
@@ -150,6 +182,7 @@ namespace AnnaMessager.Core.ViewModels
             try
             {
                 IsSaving = true;
+                Debug.WriteLine($"開始保存設定: ServerUrl={ServerUrl}, AccessToken={AccessToken?.Length ?? 0} 字符");
 
                 var settings = new ServerSettings
                 {
@@ -163,12 +196,41 @@ namespace AnnaMessager.Core.ViewModels
                 await _settingsService.SaveServerSettingsAsync(settings);
                 Debug.WriteLine("伺服器設定已保存");
 
+                // 立即測試載入
+                Debug.WriteLine("=== 立即測試載入保存的設定 ===");
+                var loadedSettings = await _settingsService.LoadServerSettingsAsync();
+                if (loadedSettings != null)
+                {
+                    Debug.WriteLine(
+                        $"立即載入結果: ServerUrl={loadedSettings.ServerUrl}, AccessToken={loadedSettings.AccessToken?.Length ?? 0} 字符");
+
+                    if (loadedSettings.ServerUrl == settings.ServerUrl &&
+                        loadedSettings.AccessToken == settings.AccessToken)
+                    {
+                        Debug.WriteLine("✓ 保存和載入一致");
+                    }
+                    else
+                    {
+                        Debug.WriteLine("✗ 保存和載入不一致");
+                        Debug.WriteLine($"  期望: ServerUrl={settings.ServerUrl}, AccessToken={settings.AccessToken}");
+                        Debug.WriteLine(
+                            $"  實際: ServerUrl={loadedSettings.ServerUrl}, AccessToken={loadedSettings.AccessToken}");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("✗ 立即載入失敗，返回 null");
+                }
+
+                Debug.WriteLine("=== 測試完成 ===");
+
                 // 關閉視窗
                 Close(this);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"保存伺服器設定失敗: {ex.Message}");
+                Debug.WriteLine($"錯誤詳情: {ex.StackTrace}");
                 TestResult = $"保存失敗: {ex.Message}";
             }
             finally

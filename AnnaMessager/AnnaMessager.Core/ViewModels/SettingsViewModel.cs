@@ -23,7 +23,7 @@ namespace AnnaMessager.Core.ViewModels
             _cacheManager = Mvx.Resolve<ICacheManager>();
 
             Settings = new AppSettings();
-            CacheInfo = new CacheInfo();
+            CacheInfo = new CacheInfo(); // 這現在明確引用 Services.CacheInfo
 
             ClearCacheCommand = new MvxCommand(async () => await ClearCacheAsync());
             CalculateCacheCommand = new MvxCommand(async () => await CalculateCacheAsync());

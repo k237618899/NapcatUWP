@@ -8,158 +8,190 @@
 
     <views:MvxWindowsPage.Resources>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
-        
-        <!-- 導航欄樣式 -->
-        <Style x:Key="NavigationButtonStyle" TargetType="Button">
+        <converters:StringNullOrEmptyToVisibilityConverter x:Key="StringNullOrEmptyToVisibilityConverter"/>
+        <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
+        <Style x:Key="NavButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="16,8"/>
-            <Setter Property="HorizontalAlignment" Value="Stretch"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="0"/>
             <Setter Property="FontSize" Value="16"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="LayoutRoot" MinHeight="44" Background="{TemplateBinding Background}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="4"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Rectangle x:Name="SelBar" Fill="White" Opacity="0" RadiusX="2" RadiusY="2"/>
+                            <ContentPresenter Grid.Column="1" Margin="12,0,12,0" HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal"/>
+                                    <VisualState x:Name="PointerOver">
+                                        <Storyboard>
+                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="LayoutRoot" Storyboard.TargetProperty="Background">
+                                                <DiscreteObjectKeyFrame KeyTime="0" Value="#22000000"/>
+                                            </ObjectAnimationUsingKeyFrames>
+                                        </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <Storyboard>
+                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="LayoutRoot" Storyboard.TargetProperty="Background">
+                                                <DiscreteObjectKeyFrame KeyTime="0" Value="#33000000"/>
+                                            </ObjectAnimationUsingKeyFrames>
+                                        </Storyboard>
+                                    </VisualState>
+                                    <VisualState x:Name="Selected">
+                                        <Storyboard>
+                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="LayoutRoot" Storyboard.TargetProperty="Background">
+                                                <DiscreteObjectKeyFrame KeyTime="0" Value="#33000000"/>
+                                            </ObjectAnimationUsingKeyFrames>
+                                            <ObjectAnimationUsingKeyFrames Storyboard.TargetName="SelBar" Storyboard.TargetProperty="Opacity">
+                                                <DiscreteObjectKeyFrame KeyTime="0" Value="1"/>
+                                            </ObjectAnimationUsingKeyFrames>
+                                        </Storyboard>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </views:MvxWindowsPage.Resources>
 
-    <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
+    <Grid x:Name="RootLayout">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="AdaptiveStates">
+                <VisualState x:Name="Narrow">
+                    <VisualState.Setters>
+                        <Setter Target="RootSplitView.DisplayMode" Value="Overlay"/>
+                        <Setter Target="RootSplitView.IsPaneOpen" Value="False"/>
+                        <Setter Target="HamburgerButton.Visibility" Value="Visible"/>
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Wide">
+                    <VisualState.Setters>
+                        <Setter Target="RootSplitView.DisplayMode" Value="CompactInline"/>
+                        <Setter Target="RootSplitView.IsPaneOpen" Value="True"/>
+                        <Setter Target="HamburgerButton.Visibility" Value="Collapsed"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
 
-        <!-- 左側導航欄 -->
-        <Grid Grid.Column="0" 
-              Background="#FF0078D4">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+        <SplitView x:Name="RootSplitView" IsPaneOpen="True" CompactPaneLength="48" OpenPaneLength="260">
+            <SplitView.Pane>
+                <Grid Background="{StaticResource PrimaryBrush}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-            <!-- 用戶信息區域 -->
-            <Border Grid.Row="0" 
-                    Background="#FF005A9E"
-                    Padding="16">
-                <StackPanel Orientation="Horizontal">
-                    <!-- 用戶頭像 -->
-                    <Border Width="40" Height="40"
-                            Background="#FF003D6B"
-                            Margin="0,0,12,0">
-                        <TextBlock Text="👤"
-                                  FontSize="20"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"
-                                  Foreground="White"/>
-                    </Border>
-                    
-                    <!-- 用戶信息 -->
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="{Binding CurrentUserName, FallbackValue='用戶名稱'}"
-                                  Foreground="White"
-                                  FontWeight="SemiBold"
-                                  FontSize="16"/>
-                        <TextBlock Text="{Binding UserStatus, FallbackValue='在線'}"
-                                  Foreground="#E0FFFFFF"
-                                  FontSize="12"/>
+                    <StackPanel Orientation="Horizontal" Padding="16,12" Background="{StaticResource AccentBrush}">
+                        <Grid Width="40" Height="40" Margin="0,0,12,0">
+                            <Ellipse Width="40" Height="40">
+                                <Ellipse.Fill>
+                                    <ImageBrush ImageSource="{Binding CurrentUserAvatar}" Stretch="UniformToFill"/>
+                                </Ellipse.Fill>
+                            </Ellipse>
+                            <TextBlock Text="{Binding CurrentUserName, Converter={StaticResource FirstLetterConverter}}" FontSize="18" FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding CurrentUserAvatar, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}"/>
+                        </Grid>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding CurrentUserName, FallbackValue=用戶名稱}" FontSize="16" FontWeight="SemiBold" Foreground="White"/>
+                            <TextBlock Text="{Binding UserStatus, FallbackValue=在線}" FontSize="12" Foreground="#E0FFFFFF"/>
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
-            </Border>
 
-            <!-- 導航選項 -->
-            <StackPanel Grid.Row="1" Margin="8,16">
-                <Button x:Name="ChatsButton"
-                       Content="💬 聊天"
-                       Style="{StaticResource NavigationButtonStyle}"
-                       Click="Navigation_Click"
-                       Tag="Chats"/>
-                       
-                <Button x:Name="ContactsButton"
-                       Content="👥 聯絡人"
-                       Style="{StaticResource NavigationButtonStyle}"
-                       Click="Navigation_Click"
-                       Tag="Contacts"/>
-                       
-                <Button x:Name="GroupsButton"
-                       Content="👨‍👩‍👧‍👦 群組"
-                       Style="{StaticResource NavigationButtonStyle}"
-                       Click="Navigation_Click"
-                       Tag="Groups"/>
-                       
-                <Button x:Name="SettingsButton"
-                       Content="⚙️ 設定"
-                       Style="{StaticResource NavigationButtonStyle}"
-                       Click="Navigation_Click"
-                       Tag="Settings"/>
-            </StackPanel>
+                    <StackPanel Grid.Row="1" Margin="0,8">
+                        <Button x:Name="ChatsButton" Tag="Chats" Style="{StaticResource NavButtonStyle}" Foreground="White" Click="Navigation_Click">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <SymbolIcon Symbol="Message" Width="20" Height="20" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="聊天" VerticalAlignment="Center" FontSize="16"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="ContactsButton" Tag="Contacts" Style="{StaticResource NavButtonStyle}" Foreground="White" Click="Navigation_Click">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <SymbolIcon Symbol="Contact" Width="20" Height="20" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="聯絡人" VerticalAlignment="Center" FontSize="16"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="GroupsButton" Tag="Groups" Style="{StaticResource NavButtonStyle}" Foreground="White" Click="Navigation_Click">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <SymbolIcon Symbol="People" Width="20" Height="20" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="群組" VerticalAlignment="Center" FontSize="16"/>
+                            </Grid>
+                        </Button>
+                        <Button x:Name="SettingsButton" Tag="Settings" Style="{StaticResource NavButtonStyle}" Foreground="White" Click="Navigation_Click">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="36"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <SymbolIcon Symbol="Setting" Width="20" Height="20" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="設定" VerticalAlignment="Center" FontSize="16"/>
+                            </Grid>
+                        </Button>
+                    </StackPanel>
 
-            <!-- 底部操作 -->
-            <StackPanel Grid.Row="2" Margin="8,16">
-                <Button Content="🚪 登出"
-                       Style="{StaticResource NavigationButtonStyle}"
-                       Command="{Binding LogoutCommand}"
-                       Foreground="#E0FFFFFF"/>
-                       
-                <TextBlock Text="{Binding ConnectionStatus, FallbackValue='已連接'}"
-                          HorizontalAlignment="Center"
-                          FontSize="12"
-                          Foreground="#E0FFFFFF"
-                          Margin="0,8"/>
-            </StackPanel>
-        </Grid>
+                    <StackPanel Grid.Row="2" Margin="0,8" Padding="16,0,16,16">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6" VerticalAlignment="Center">
+                            <Ellipse Width="10" Height="10" Fill="{Binding ConnectionIndicatorColor}"/>
+                            <TextBlock Text="{Binding ConnectionStatus, FallbackValue=已連接}" FontSize="12" Foreground="#E0FFFFFF" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding ServerUrl}" FontSize="11" Foreground="#B0FFFFFF" TextTrimming="CharacterEllipsis" Visibility="{Binding ServerUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" Margin="0,0,0,6"/>
+                        <Button Content="登出" Command="{Binding LogoutCommand}" Foreground="White"/>
+                    </StackPanel>
+                </Grid>
+            </SplitView.Pane>
+            <SplitView.Content>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-        <!-- 右側內容區域 -->
-        <Grid Grid.Column="1">
-            <Frame x:Name="ContentFrame" 
-                   Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"/>
+                    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Height="48" VerticalAlignment="Top">
+                        <Button x:Name="HamburgerButton" Width="48" Height="48" Content="☰" Background="Transparent" Foreground="Black" Click="HamburgerButton_Click"/>
+                        <TextBlock Text="AnnaMessager" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="56,0,0,0"/>
+                    </Grid>
 
-            <!-- 載入指示器 -->
-            <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                  Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
-                <StackPanel HorizontalAlignment="Center" 
-                           VerticalAlignment="Center">
-                    <ProgressRing Width="40" Height="40" IsActive="True"/>
-                    <TextBlock Text="載入中..."
-                              HorizontalAlignment="Center"
-                              Margin="0,16,0,0"
-                              FontSize="16"
-                              Foreground="Gray"/>
-                </StackPanel>
-            </Grid>
+                    <Grid Grid.Row="1">
+                        <Frame x:Name="ContentFrame" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"/>
 
-            <!-- 連接錯誤提示 -->
-            <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                  Visibility="{Binding HasConnectionError, Converter={StaticResource BoolToVisibilityConverter}}">
-                <StackPanel HorizontalAlignment="Center" 
-                           VerticalAlignment="Center"
-                           MaxWidth="400">
-                    <TextBlock Text="⚠️"
-                             FontSize="48"
-                             HorizontalAlignment="Center"/>
-                    
-                    <TextBlock Text="連接已中斷"
-                              FontSize="20"
-                              FontWeight="SemiBold"
-                              HorizontalAlignment="Center"
-                              Margin="0,16,0,8"/>
-                    
-                    <TextBlock Text="{Binding ConnectionErrorMessage}"
-                              FontSize="14"
-                              Foreground="Gray"
-                              HorizontalAlignment="Center"
-                              TextAlignment="Center"
-                              TextWrapping="Wrap"
-                              Margin="0,0,0,16"/>
-                    
-                    <Button Content="重新連接"
-                           Command="{Binding ReconnectCommand}"
-                           Background="#FF0078D4"
-                           Foreground="White"
-                           Padding="24,8"/>
-                </StackPanel>
-            </Grid>
-        </Grid>
+                        <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <ProgressRing Width="40" Height="40" IsActive="True"/>
+                                <TextBlock Text="載入中..." Margin="0,16,0,0" FontSize="16" Foreground="Gray" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Visibility="{Binding HasConnectionError, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="400">
+                                <TextBlock Text="⚠️" FontSize="48" HorizontalAlignment="Center"/>
+                                <TextBlock Text="連接已中斷" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,16,0,8"/>
+                                <TextBlock Text="{Binding ConnectionErrorMessage}" FontSize="14" Foreground="Gray" TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                                <Button Content="重新連接" Command="{Binding ReconnectCommand}" Padding="24,8"/>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </SplitView.Content>
+        </SplitView>
     </Grid>
 </views:MvxWindowsPage>

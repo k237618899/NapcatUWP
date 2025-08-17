@@ -11,6 +11,9 @@
         <converters:TestingTextConverter x:Key="TestingTextConverter"/>
         <converters:SavingTextConverter x:Key="SavingTextConverter"/>
         
+        <!-- 反轉布爾值轉換器，用於按鈕 IsEnabled -->
+        <converters:BooleanInverterConverter x:Key="BoolInverterConverter"/>
+        
         <!-- 設定項目樣式 -->
         <Style x:Key="SettingItemStyle" TargetType="Grid">
             <Setter Property="Padding" Value="24,16"/>
@@ -211,7 +214,7 @@
                         BorderThickness="1"
                         Foreground="#FF0078D4"
                         Command="{Binding TestConnectionCommand}"
-                        IsEnabled="{Binding IsTesting, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"
+                        IsEnabled="{Binding IsTesting, Converter={StaticResource BoolInverterConverter}}"
                         MinWidth="100"
                         Height="36">
                     <StackPanel Orientation="Horizontal">
@@ -243,7 +246,7 @@
                     Foreground="White"
                     BorderBrush="Transparent"
                     Command="{Binding SaveCommand}"
-                    IsEnabled="{Binding IsSaving, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"
+                    IsEnabled="{Binding IsSaving, Converter={StaticResource BoolInverterConverter}}"
                     MinWidth="80"
                     Height="36">
                 <StackPanel Orientation="Horizontal">

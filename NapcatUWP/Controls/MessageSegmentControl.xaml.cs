@@ -480,7 +480,7 @@ namespace NapcatUWP.Controls
                 var playButton = new Button
                 {
                     Content = "▶ 播放",
-                    Background = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215)),
+                    Background = new SolidColorBrush(Color.FromArgb(255, 126, 108, 168)), // #7E6CA8
                     Foreground = new SolidColorBrush(Colors.White),
                     BorderThickness = new Thickness(0),
                     Padding = new Thickness(12, 6, 12, 6),

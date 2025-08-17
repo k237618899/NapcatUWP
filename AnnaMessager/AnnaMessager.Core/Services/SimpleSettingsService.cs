@@ -3,7 +3,8 @@ using AnnaMessager.Core.Models;
 
 namespace AnnaMessager.Core.Services
 {
-    public class SimpleSettingsService : ISettingsService
+    // 由 public 改為 internal，避免被 MvvmCross 自動掃描註冊
+    internal class SimpleSettingsService : ISettingsService
     {
         public Task<AppSettings> LoadSettingsAsync()
         {
@@ -19,7 +20,6 @@ namespace AnnaMessager.Core.Services
 
         public Task SaveSettingsAsync(AppSettings settings)
         {
-            // 簡單實現：不實際保存
             return Task.FromResult(0);
         }
 
@@ -37,7 +37,6 @@ namespace AnnaMessager.Core.Services
 
         public Task SaveServerSettingsAsync(ServerSettings settings)
         {
-            // 簡單實現：不實際保存
             return Task.FromResult(0);
         }
 
@@ -53,20 +52,20 @@ namespace AnnaMessager.Core.Services
 
         public Task SaveLoginCredentialsAsync(LoginCredentials credentials)
         {
-            // 簡單實現：不實際保存
             return Task.FromResult(0);
         }
 
         public Task ClearAllSettingsAsync()
         {
-            // 簡單實現：不實際操作
             return Task.FromResult(0);
         }
 
         public Task<bool> HasSettingsAsync()
         {
-            // 簡單實現：假設設定存在
             return Task.FromResult(true);
         }
     }
 }
+
+// 已移除 SimpleSettingsService 測試實作，使用平台實際 UwpSettingsService。
+// 此檔案保留以防其他專案仍有引用，若無引用可刪除

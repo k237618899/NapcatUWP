@@ -10,19 +10,11 @@ namespace AnnaMessager.Core
     {
         public override void Initialize()
         {
-            // 註冊核心服務 - 使用簡單的實現避免依賴問題
-            Mvx.LazyConstructAndRegisterSingleton<IOneBotService, OneBotService>();
+            // OneBotService 延由平台 Setup 顯式註冊，這裡僅保底
+            if (!Mvx.CanResolve<IOneBotService>())
+                Mvx.RegisterSingleton<IOneBotService>(new OneBotService());
 
-            // 使用我們的簡單實現
-            Mvx.RegisterSingleton<ISettingsService>(() => new SimpleSettingsService());
-            Mvx.RegisterSingleton<ICacheManager>(() => new SimpleCacheManager());
-
-            CreatableTypes()
-                .EndingWith("Service")
-                .AsInterfaces()
-                .RegisterAsLazySingleton();
-
-            // 從登入頁面開始，避免複雜依賴
+            // 不再使用 CreatableTypes().EndingWith("Service") 自動掃描，避免覆蓋 UWP 平台專用服務
             RegisterAppStart<LoginViewModel>();
         }
     }

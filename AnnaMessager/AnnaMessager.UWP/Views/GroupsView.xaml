@@ -8,6 +8,7 @@
 
     <views:MvxWindowsPage.Resources>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <converters:StringNullOrEmptyToVisibilityConverter x:Key="StringNullOrEmptyToVisibilityConverter"/>
         
         <!-- 群組項目樣式 -->
         <Style x:Key="GroupItemStyle" TargetType="ListViewItem">
@@ -55,6 +56,8 @@
                   x:Name="GroupsListView"
                   ItemsSource="{Binding Groups}"
                   SelectionMode="Single"
+                  IsItemClickEnabled="True"
+                  ItemClick="GroupsListView_ItemClick"
                   ItemContainerStyle="{StaticResource GroupItemStyle}"
                   SelectionChanged="GroupsListView_SelectionChanged">
                   
@@ -69,29 +72,27 @@
 
                         <!-- 群組頭像區域 -->
                         <Grid Grid.Column="0" Width="48" Height="48">
-                            <!-- 頭像背景 -->
-                            <Border Background="#FF0078D4"
-                                    Width="48" Height="48">
-                                <TextBlock Text="群"
-                                          FontSize="18"
-                                          FontWeight="SemiBold"
-                                          Foreground="White"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"/>
+                            <Ellipse Width="48" Height="48">
+                                <Ellipse.Fill>
+                                    <ImageBrush ImageSource="{Binding AvatarUrl}" Stretch="UniformToFill" />
+                                </Ellipse.Fill>
+                            </Ellipse>
+                            <Border Background="#FF0078D4" Width="48" Height="48" Visibility="{Binding AvatarUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}">
+                                <TextBlock Text="群" FontSize="18" FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </Grid>
 
-                        <!-- 群組信息 -->
+                        <!-- 群組情報 -->
                         <StackPanel Grid.Column="1" 
                                    Margin="12,0,8,0"
                                    VerticalAlignment="Center">
-                            <!-- 群組名稱 -->
+                            <!-- 群組名称 -->
                             <TextBlock Text="{Binding GroupName}" 
                                       FontSize="16"
                                       FontWeight="SemiBold"
                                       Foreground="Black"/>
                             
-                            <!-- 成員數量 -->
+                            <!-- メンバー数 -->
                             <TextBlock FontSize="14"
                                       Foreground="Gray">
                                 <Run Text="{Binding MemberCount}"/>

@@ -9,153 +9,122 @@
     <views:MvxWindowsPage.Resources>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
-        <converters:EmptyListToVisibilityConverter x:Key="EmptyListToVisibilityConverter"/>
-        
-        <!-- 聯絡人項目樣式 -->
-        <Style x:Key="ContactItemStyle" TargetType="ListViewItem">
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="Padding" Value="16,8"/>
-            <Setter Property="Margin" Value="0,1"/>
-            <Setter Property="Background" Value="Transparent"/>
+        <converters:StringNullOrEmptyToVisibilityConverter x:Key="StringNullOrEmptyToVisibilityConverter"/>
+        <converters:BooleanToChevronGlyphConverter x:Key="BoolToChevron"/>
+        <Style x:Key="ContactRowGridStyle" TargetType="Grid">
+            <Setter Property="Height" Value="56"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
-        
-        <!-- 標題樣式 -->
-        <Style x:Key="TitleTextStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="28"/>
-            <Setter Property="FontWeight" Value="Light"/>
-            <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
+        <Style x:Key="ChatButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{ThemeResource SystemControlBackgroundAccentBrush}"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
         </Style>
     </views:MvxWindowsPage.Resources>
 
-    <Grid>
+    <Grid Padding="24,16,24,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 標題欄 -->
-        <Grid Grid.Row="0" Padding="24,16">
-            <TextBlock Text="聯絡人" 
-                       Style="{StaticResource TitleTextStyle}"
-                       HorizontalAlignment="Left"
-                       VerticalAlignment="Center"/>
+        <TextBlock Grid.Row="0" Text="聯絡人" FontSize="30" FontWeight="SemiLight" Margin="0,0,0,12"/>
+
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <TextBox x:Name="SearchBox" Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="搜尋聯絡人..." Height="38" HorizontalAlignment="Stretch" TextChanged="SearchBox_TextChanged"/>
         </Grid>
 
-        <!-- 搜索欄 -->
-        <Grid Grid.Row="1" Margin="16,0,16,16">
-            <TextBox x:Name="SearchBox" 
-                     Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                     PlaceholderText="搜尋聯絡人..."
-                     Background="{ThemeResource SystemControlBackgroundAltHighBrush}"
-                     BorderBrush="Transparent"
-                     TextChanged="SearchBox_TextChanged"/>
-        </Grid>
-
-        <!-- 聯絡人列表 -->
-        <ListView Grid.Row="2" 
-                  x:Name="ContactsListView"
-                  ItemsSource="{Binding Contacts}"
-                  SelectionMode="Single"
-                  ItemContainerStyle="{StaticResource ContactItemStyle}"
-                  SelectionChanged="ContactsListView_SelectionChanged">
-                  
+        <ListView Grid.Row="2" x:Name="ContactsListView" ItemsSource="{Binding GroupedContacts}" IsItemClickEnabled="False" SelectionMode="None">
             <ListView.ItemTemplate>
                 <DataTemplate>
-                    <Grid Height="64" Background="Transparent">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="60"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- 頭像區域 -->
-                        <Grid Grid.Column="0" Width="40" Height="40">
-                            <!-- 頭像背景 -->
-                            <Ellipse Fill="#FF0078D4"/>
-                            
-                            <!-- 頭像文字 -->
-                            <TextBlock Text="{Binding DisplayName, Converter={StaticResource FirstLetterConverter}}"
-                                      FontSize="16"
-                                      FontWeight="SemiBold"
-                                      Foreground="White"
-                                      HorizontalAlignment="Center"
-                                      VerticalAlignment="Center"/>
-                                      
-                            <!-- 在線狀態指示器 -->
-                            <Ellipse Width="12" Height="12"
-                                    Fill="Green"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Bottom"
-                                    Margin="0,0,-2,-2"
-                                    Visibility="{Binding IsOnline, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                        </Grid>
-
-                        <!-- 聯絡人信息 -->
-                        <StackPanel Grid.Column="1" 
-                                   Margin="12,0,8,0"
-                                   VerticalAlignment="Center">
-                            <!-- 顯示名稱 -->
-                            <TextBlock Text="{Binding DisplayName}" 
-                                      FontSize="16"
-                                      FontWeight="SemiBold"
-                                      Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
-                            
-                            <!-- 備註/暱稱 -->
-                            <TextBlock Text="{Binding Nickname}"
-                                      FontSize="14"
-                                      Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                                      Visibility="{Binding HasRemark, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                    <StackPanel>
+                        <Button Background="Transparent" BorderBrush="Transparent" Padding="4,4" HorizontalAlignment="Left" Click="CategoryHeader_Click" Tag="{Binding CategoryName}">
+                            <StackPanel Orientation="Horizontal">
+                                <FontIcon Glyph="{Binding IsExpanded, Converter={StaticResource BoolToChevron}}" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding CategoryName}" FontSize="16" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding LoadedCountText}" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
+                            </StackPanel>
+                        </Button>
+                        <ItemsControl ItemsSource="{Binding Items}" Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2,0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="56"/>
+                                            <ColumnDefinition Width="260"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="52"/>
+                                        </Grid.ColumnDefinitions>
+                                        <!-- Avatar -->
+                                        <Grid Grid.Column="0" Width="48" Height="48" VerticalAlignment="Center" Margin="4,0,4,0">
+                                            <Ellipse Width="48" Height="48">
+                                                <Ellipse.Fill>
+                                                    <ImageBrush ImageSource="{Binding AvatarUrl}" Stretch="UniformToFill"/>
+                                                </Ellipse.Fill>
+                                            </Ellipse>
+                                            <Ellipse Fill="#FF0078D4" Visibility="{Binding AvatarUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}"/>
+                                            <TextBlock Text="{Binding DisplayName, Converter={StaticResource FirstLetterConverter}}" Foreground="White" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding AvatarUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}"/>
+                                            <Ellipse Width="10" Height="10" Fill="Green" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-2,-2" Visibility="{Binding IsOnline, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </Grid>
+                                        <!-- Name with highlight -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,4,0" Width="260">
+                                            <TextBlock x:Name="HighlightNameBlock" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Visibility="{Binding HasHighlight, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                <Run Text="{Binding NamePrefix}"/>
+                                                <Run Text="{Binding NameMatch}" Foreground="Orange"/>
+                                                <Run Text="{Binding NameSuffix}"/>
+                                            </TextBlock>
+                                            <TextBlock x:Name="PlainNameBlock" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding DisplayName}" Visibility="{Binding HasHighlight, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
+                                            <TextBlock Text="{Binding OnlineStatusText}" FontSize="12" Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}" Visibility="{Binding HasOnlineStatus, Converter={StaticResource BoolToVisibilityConverter}}" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                        <!-- Spacer -->
+                                        <Grid Grid.Column="2"/>
+                                        <!-- Chat Button (aligned using fixed 52 col) -->
+                                        <Button Grid.Column="3" Content="💬" Style="{StaticResource ChatButtonStyle}" Tag="{Binding}" Click="ContactOpen_Click" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <!-- Skeleton when loading more -->
+                        <StackPanel Orientation="Vertical" Margin="12,4,0,8" Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel.Resources>
+                                <Style TargetType="Rectangle" x:Key="SkeletonRectStyle">
+                                    <Setter Property="Height" Value="14"/>
+                                    <Setter Property="RadiusX" Value="4"/>
+                                    <Setter Property="RadiusY" Value="4"/>
+                                    <Setter Property="Fill" Value="#33FFFFFF"/>
+                                    <Setter Property="Margin" Value="0,4,0,0"/>
+                                </Style>
+                            </StackPanel.Resources>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <Ellipse Width="40" Height="40" Fill="#22FFFFFF"/>
+                                <StackPanel Margin="12,0,0,0" Width="180" VerticalAlignment="Center">
+                                    <Rectangle Style="{StaticResource SkeletonRectStyle}" Width="140"/>
+                                    <Rectangle Style="{StaticResource SkeletonRectStyle}" Width="90"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <Ellipse Width="40" Height="40" Fill="#22FFFFFF"/>
+                                <StackPanel Margin="12,0,0,0" Width="180" VerticalAlignment="Center">
+                                    <Rectangle Style="{StaticResource SkeletonRectStyle}" Width="120"/>
+                                    <Rectangle Style="{StaticResource SkeletonRectStyle}" Width="70"/>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
-
-                        <!-- 狀態指示 -->
-                        <StackPanel Grid.Column="2" 
-                                   VerticalAlignment="Center"
-                                   HorizontalAlignment="Right">
-                            <FontIcon Glyph="&#xE8BD;" 
-                                     FontSize="16"
-                                     Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
-                        </StackPanel>
-                    </Grid>
+                        <Border Background="{ThemeResource SystemControlForegroundBaseLowBrush}" Height="1" Margin="0,4,0,4" Opacity="0.15"/>
+                    </StackPanel>
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
 
-        <!-- 載入指示器 -->
-        <Grid Grid.Row="2" 
-              Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-              Visibility="{Binding IsRefreshing, Converter={StaticResource BoolToVisibilityConverter}}">
-            <StackPanel HorizontalAlignment="Center"
-                       VerticalAlignment="Center">
+        <Grid Grid.Row="2" Visibility="{Binding IsRefreshing, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <ProgressRing Width="40" Height="40" IsActive="True"/>
-                <TextBlock Text="載入聯絡人..."
-                          FontSize="14"
-                          Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                          HorizontalAlignment="Center"
-                          Margin="0,8,0,0"/>
-            </StackPanel>
-        </Grid>
-
-        <!-- 空狀態顯示 -->
-        <Grid Grid.Row="2"
-              Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-              Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibilityConverter}}">
-            <StackPanel HorizontalAlignment="Center"
-                       VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE77B;"
-                         FontSize="48"
-                         Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                         HorizontalAlignment="Center"
-                         Margin="0,0,0,16"/>
-                <TextBlock Text="暫無聯絡人"
-                          FontSize="18"
-                          Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                          HorizontalAlignment="Center"/>
-                <TextBlock Text="添加好友後在這裡顯示"
-                          FontSize="14"
-                          Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}"
-                          HorizontalAlignment="Center"
-                          Margin="0,8,0,0"/>
+                <TextBlock Text="載入聯絡人..." FontSize="14" HorizontalAlignment="Center" Margin="0,8,0,0"/>
             </StackPanel>
         </Grid>
     </Grid>

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using AnnaMessager.Core.Models;
@@ -13,6 +14,7 @@ namespace AnnaMessager.Core.ViewModels
     public class GroupsViewModel : MvxViewModel
     {
         private readonly IOneBotService _oneBotService;
+        private readonly ICacheManager _cacheManager;
         private ObservableCollection<GroupItem> _groups;
         private bool _isRefreshing;
         private string _searchText;
@@ -25,6 +27,9 @@ namespace AnnaMessager.Core.ViewModels
             OpenChatCommand = new MvxCommand<GroupItem>(OpenChat);
             RefreshCommand = new MvxCommand(async () => await RefreshAsync());
             SearchCommand = new MvxCommand<string>(OnSearch);
+            _cacheManager = Mvx.Resolve<ICacheManager>();
+
+            Debug.WriteLine("[GroupsViewModel] 建構子執行");
         }
 
         public ObservableCollection<GroupItem> Groups
@@ -59,7 +64,28 @@ namespace AnnaMessager.Core.ViewModels
         public override async Task Initialize()
         {
             await base.Initialize();
+            Debug.WriteLine("[GroupsViewModel] Initialize 開始");
+            await LoadCachedGroupsAsync();
             await LoadGroupsAsync();
+            Debug.WriteLine("[GroupsViewModel] Initialize 結束, Groups.Count=" + (Groups?.Count ?? 0));
+        }
+
+        private async Task LoadCachedGroupsAsync()
+        {
+            try
+            {
+                var cached = await _cacheManager.LoadCachedGroupsAsync();
+                if (cached != null && cached.Count > 0)
+                {
+                    Groups.Clear();
+                    foreach (var g in cached) Groups.Add(g);
+                    RaisePropertyChanged(() => IsEmpty);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"載入群組緩存失敗: {ex.Message}");
+            }
         }
 
         private async Task LoadGroupsAsync()
@@ -68,20 +94,35 @@ namespace AnnaMessager.Core.ViewModels
             {
                 IsRefreshing = true;
 
+                // 先保留現有(緩存)列表，增量合併
+                var existing = Groups.ToList().ToDictionary(g => g.GroupId, g => g);
                 var groups = await _oneBotService.GetGroupListAsync();
                 if (groups?.Status == "ok" && groups.Data != null)
                 {
-                    Groups.Clear();
                     foreach (var group in groups.Data)
-                        Groups.Add(new GroupItem
+                    {
+                        if (!existing.TryGetValue(group.GroupId, out var groupItem))
                         {
-                            GroupId = group.GroupId,
-                            GroupName = group.GroupName,
-                            MemberCount = group.MemberCount,
-                            IsOwner = false, // 簡化處理
-                            IsAdmin = false // 簡化處理
-                        });
+                            groupItem = new GroupItem
+                            {
+                                GroupId = group.GroupId,
+                                GroupName = group.GroupName,
+                                MemberCount = group.MemberCount,
+                                IsOwner = false,
+                                IsAdmin = false,
+                                AvatarUrl = $"https://p.qlogo.cn/gh/{group.GroupId}/{group.GroupId}/640/"
+                            };
+                            Groups.Add(groupItem);
+                        }
+                        else
+                        {
+                            groupItem.GroupName = group.GroupName;
+                            groupItem.MemberCount = group.MemberCount;
+                        }
+                        await _cacheManager.CacheGroupItemAsync(groupItem);
+                    }
                 }
+                RaisePropertyChanged(() => IsEmpty);
             }
             catch (Exception ex)
             {
@@ -90,7 +131,6 @@ namespace AnnaMessager.Core.ViewModels
             finally
             {
                 IsRefreshing = false;
-                RaisePropertyChanged(() => IsEmpty);
             }
         }
 
@@ -125,8 +165,30 @@ namespace AnnaMessager.Core.ViewModels
         private void OnSearch(string searchText)
         {
             SearchText = searchText;
-            // TODO: 實作搜尋功能
-            // 可以根據 searchText 過濾 Groups 集合
+            try
+            {
+                if (string.IsNullOrEmpty(searchText))
+                {
+                    Task.Run(async () => await LoadCachedGroupsAsync());
+                    return;
+                }
+                // 目前簡單過濾: 重建列表
+                Task.Run(async () =>
+                {
+                    var cached = await _cacheManager.LoadCachedGroupsAsync();
+                    var filtered = cached.FindAll(g => (g.GroupName ?? "").Contains(searchText));
+                    InvokeOnMainThread(() =>
+                    {
+                        Groups.Clear();
+                        foreach (var g in filtered) Groups.Add(g);
+                        RaisePropertyChanged(() => IsEmpty);
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"群組搜尋失敗: {ex.Message}");
+            }
         }
     }
 }

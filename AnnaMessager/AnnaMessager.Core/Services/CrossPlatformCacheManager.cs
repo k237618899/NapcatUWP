@@ -29,6 +29,10 @@ namespace AnnaMessager.Core.Services
         private List<GroupItem> _groupListCache;
         private DateTime _groupListCacheTime;
 
+        // 新增：簡易消息緩存內存字典（只做短暫快取，避免破壞原有架構）
+        private readonly Dictionary<string, List<MessageItem>> _messageMemoryCache = new Dictionary<string, List<MessageItem>>();
+        private readonly int _messageMemoryLimitPerChat = 100; // 每個聊天最多暫存 100 條
+
         public CrossPlatformCacheManager()
         {
             _platformService = Mvx.Resolve<IPlatformSettingsService>();
@@ -499,6 +503,144 @@ namespace AnnaMessager.Core.Services
             }
         }
 
+        #endregion // 緩存管理操作
+
+        #region Message Cache 新增方法實作
+        public Task CacheMessageAsync(long chatId, bool isGroup, MessageItem message)
+        {
+            try
+            {
+                if (message == null) return Task.FromResult(0);
+                var key = GetMessageCacheKey(chatId, isGroup);
+                lock (_lockObject)
+                {
+                    List<MessageItem> list;
+                    if (!_messageMemoryCache.TryGetValue(key, out list)) { list = new List<MessageItem>(); _messageMemoryCache[key] = list; }
+
+                    if (message.MessageId != 0)
+                    {
+                        var existing = list.FirstOrDefault(x => x.MessageId == message.MessageId);
+                        if (existing != null)
+                        {
+                            // 合併更新 (覆蓋最新資訊)
+                            existing.Content = message.Content;
+                            existing.Time = message.Time;
+                            existing.IsFromSelf = message.IsFromSelf;
+                            existing.SenderId = message.SenderId;
+                            existing.SenderName = message.SenderName;
+                            existing.MessageType = message.MessageType;
+                            existing.ImageUrl = message.ImageUrl;
+                            existing.SendStatus = message.SendStatus;
+                            existing.SenderAvatar = message.SenderAvatar ?? existing.SenderAvatar;
+                            existing.ShowSenderName = message.ShowSenderName;
+                            existing.ShowTimeStamp = message.ShowTimeStamp;
+                            existing.ReplySummary = message.ReplySummary;
+                            existing.ReplyTargetId = message.ReplyTargetId;
+                            existing.IsPreview = message.IsPreview;
+                            // 同步 RichSegments (若新消息有內容且舊的為空或較少)
+                            try
+                            {
+                                if (message.RichSegments != null && message.RichSegments.Count > 0)
+                                {
+                                    if (existing.RichSegments == null || existing.RichSegments.Count != message.RichSegments.Count)
+                                    {
+                                        existing.RichSegments.Clear();
+                                        foreach (var seg in message.RichSegments) existing.RichSegments.Add(seg);
+                                    }
+                                }
+                            }
+                            catch { }
+                            return Task.FromResult(0); // 已更新
+                        }
+                    }
+                    // 新增
+                    list.Add(message);
+                    if (list.Count > _messageMemoryLimitPerChat) list.RemoveRange(0, list.Count - _messageMemoryLimitPerChat);
+                }
+            }
+            catch (Exception ex) { Debug.WriteLine($"CacheMessageAsync 失敗: {ex.Message}"); }
+            return Task.FromResult(0);
+        }
+
+        public Task CacheMessagesAsync(long chatId, bool isGroup, IEnumerable<MessageItem> messages)
+        {
+            try
+            {
+                if (messages == null) return Task.FromResult(0);
+                var key = GetMessageCacheKey(chatId, isGroup);
+                lock (_lockObject)
+                {
+                    List<MessageItem> list;
+                    if (!_messageMemoryCache.TryGetValue(key, out list)) { list = new List<MessageItem>(); _messageMemoryCache[key] = list; }
+                    foreach (var m in messages)
+                    {
+                        if (m == null) continue;
+                        if (m.MessageId != 0)
+                        {
+                            var existing = list.FirstOrDefault(x => x.MessageId == m.MessageId);
+                            if (existing != null)
+                            {
+                                existing.Content = m.Content;
+                                existing.Time = m.Time;
+                                existing.IsFromSelf = m.IsFromSelf;
+                                existing.SenderId = m.SenderId;
+                                existing.SenderName = m.SenderName;
+                                existing.MessageType = m.MessageType;
+                                existing.ImageUrl = m.ImageUrl;
+                                existing.SendStatus = m.SendStatus;
+                                existing.SenderAvatar = m.SenderAvatar ?? existing.SenderAvatar;
+                                existing.ShowSenderName = m.ShowSenderName;
+                                existing.ShowTimeStamp = m.ShowTimeStamp;
+                                existing.ReplySummary = m.ReplySummary;
+                                existing.ReplyTargetId = m.ReplyTargetId;
+                                existing.IsPreview = m.IsPreview;
+                                try
+                                {
+                                    if (m.RichSegments != null && m.RichSegments.Count > 0)
+                                    {
+                                        if (existing.RichSegments == null || existing.RichSegments.Count != m.RichSegments.Count)
+                                        {
+                                            existing.RichSegments.Clear();
+                                            foreach (var seg in m.RichSegments) existing.RichSegments.Add(seg);
+                                        }
+                                    }
+                                }
+                                catch { }
+                                continue; // 已更新，不再新增
+                            }
+                        }
+                        list.Add(m);
+                        if (list.Count > _messageMemoryLimitPerChat) list.RemoveRange(0, list.Count - _messageMemoryLimitPerChat);
+                    }
+                }
+            }
+            catch (Exception ex) { Debug.WriteLine($"CacheMessagesAsync 失敗: {ex.Message}"); }
+            return Task.FromResult(0);
+        }
+
+        public Task<List<MessageItem>> LoadCachedMessagesAsync(long chatId, bool isGroup, int take = 50)
+        {
+            try
+            {
+                var key = GetMessageCacheKey(chatId, isGroup);
+                lock (_lockObject)
+                {
+                    if (_messageMemoryCache.TryGetValue(key, out var list))
+                    {
+                        var ordered = list.OrderBy(m => m.Time).ToList();
+                        if (ordered.Count > take)
+                            ordered = ordered.GetRange(ordered.Count - take, take);
+                        return Task.FromResult(ordered);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"LoadCachedMessagesAsync 失敗: {ex.Message}");
+            }
+            return Task.FromResult(new List<MessageItem>());
+        }
+        private static string GetMessageCacheKey(long chatId, bool isGroup) => $"{(isGroup ? "G" : "U")}_{chatId}";
         #endregion
     }
 }

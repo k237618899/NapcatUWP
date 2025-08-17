@@ -71,5 +71,23 @@ namespace AnnaMessager.Core.Services
         {
             return Task.FromResult(0);
         }
+
+        public Task CacheMessageAsync(long chatId, bool isGroup, MessageItem message)
+        {
+            return Task.FromResult(0);
+        }
+
+        public Task CacheMessagesAsync(long chatId, bool isGroup, IEnumerable<MessageItem> messages)
+        {
+            return Task.FromResult(0);
+        }
+
+        public Task<List<MessageItem>> LoadCachedMessagesAsync(long chatId, bool isGroup, int take = 50)
+        {
+            return Task.FromResult(new List<MessageItem>());
+        }
     }
 }
+
+// 已移除 SimpleCacheManager 測試實作，使用平台實際 UwpCacheManager。
+// 此檔案保留以防其他專案仍有引用，若無引用可刪除

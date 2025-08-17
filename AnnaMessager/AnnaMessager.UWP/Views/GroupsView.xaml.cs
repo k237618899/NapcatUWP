@@ -1,5 +1,7 @@
-﻿using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
+﻿using System;
+using System.Diagnostics;
+using Windows.UI.Xaml;
+using Ctl=Windows.UI.Xaml.Controls; // alias
 using AnnaMessager.Core.ViewModels;
 using MvvmCross.Uwp.Views;
 
@@ -7,6 +9,7 @@ namespace AnnaMessager.UWP.Views
 {
     public sealed partial class GroupsView : MvxWindowsPage
     {
+        private bool _opening;
         public GroupsView()
         {
             InitializeComponent();
@@ -17,22 +20,38 @@ namespace AnnaMessager.UWP.Views
 
         private void GroupsView_Loaded(object sender, RoutedEventArgs e)
         {
-            // 頁面載入時的初始化
         }
 
-        private void GroupsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void GroupsListView_ItemClick(object sender, Ctl.ItemClickEventArgs e)
         {
-            if (sender is ListView listView &&
-                listView.SelectedItem is GroupItem groupItem)
+            try
             {
-                ViewModel?.OpenChatCommand?.Execute(groupItem);
-                listView.SelectedIndex = -1; // 清除選擇狀態
+                if (_opening) return;
+                _opening = true;
+                if (e.ClickedItem is AnnaMessager.Core.Models.GroupItem groupItem)
+                {
+                    ViewModel?.OpenChatCommand?.Execute(groupItem);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"開啟群聊失敗: {ex.Message}");
+            }
+            finally
+            {
+                _opening = false;
             }
         }
 
-        private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        private void GroupsListView_SelectionChanged(object sender, Ctl.SelectionChangedEventArgs e)
         {
-            if (sender is TextBox textBox)
+            // 不再使用 SelectionChanged
+            if (sender is Ctl.ListView list) list.SelectedIndex = -1;
+        }
+
+        private void SearchBox_TextChanged(object sender, Ctl.TextChangedEventArgs e)
+        {
+            if (sender is Ctl.TextBox textBox)
                 ViewModel?.SearchCommand?.Execute(textBox.Text);
         }
     }

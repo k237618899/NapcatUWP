@@ -11,10 +11,12 @@ namespace AnnaMessager.Core.ViewModels
 {
     public class LoginViewModel : MvxViewModel
     {
+        private readonly IPlatformDatabaseService _databaseService;
         private readonly IOneBotService _oneBotService;
         private readonly ISettingsService _settingsService;
         private string _accessToken;
         private string _account;
+        private bool _autoLogin;
         private bool _hasError;
         private bool _isLogging;
         private string _loginStatus;
@@ -24,11 +26,18 @@ namespace AnnaMessager.Core.ViewModels
         {
             _oneBotService = oneBotService;
             _settingsService = Mvx.Resolve<ISettingsService>();
+            _databaseService = Mvx.Resolve<IPlatformDatabaseService>();
 
             LoginCommand = new MvxCommand(async () => await LoginAsync(), () => CanLogin);
             OpenServerSettingsCommand = new MvxCommand(() => ShowViewModel<ServerSettingsViewModel>());
 
-            LoadSavedCredentials();
+            // 初始化時設置默認值
+            Account = "";
+            AccessToken = "";
+            RememberCredentials = true;
+            AutoLogin = false;
+
+            InitializeAsync();
         }
 
         public string Account
@@ -37,7 +46,9 @@ namespace AnnaMessager.Core.ViewModels
             set
             {
                 SetProperty(ref _account, value);
+                // 通知 CanLogin 和 LoginCommand 屬性變更
                 RaisePropertyChanged(() => CanLogin);
+                ((MvxCommand)LoginCommand).RaiseCanExecuteChanged();
                 HasError = false;
             }
         }
@@ -48,7 +59,9 @@ namespace AnnaMessager.Core.ViewModels
             set
             {
                 SetProperty(ref _accessToken, value);
+                // 通知 CanLogin 和 LoginCommand 屬性變更
                 RaisePropertyChanged(() => CanLogin);
+                ((MvxCommand)LoginCommand).RaiseCanExecuteChanged();
                 HasError = false;
             }
         }
@@ -59,13 +72,21 @@ namespace AnnaMessager.Core.ViewModels
             set => SetProperty(ref _rememberCredentials, value);
         }
 
+        public bool AutoLogin
+        {
+            get => _autoLogin;
+            set => SetProperty(ref _autoLogin, value);
+        }
+
         public bool IsLogging
         {
             get => _isLogging;
             set
             {
                 SetProperty(ref _isLogging, value);
+                // 通知 CanLogin 和 LoginCommand 屬性變更
                 RaisePropertyChanged(() => CanLogin);
+                ((MvxCommand)LoginCommand).RaiseCanExecuteChanged();
             }
         }
 
@@ -81,12 +102,35 @@ namespace AnnaMessager.Core.ViewModels
             set => SetProperty(ref _hasError, value);
         }
 
-        public bool CanLogin => !string.IsNullOrEmpty(Account) &&
-                                !string.IsNullOrEmpty(AccessToken) &&
+        public bool CanLogin => !string.IsNullOrWhiteSpace(Account) &&
+                                !string.IsNullOrWhiteSpace(AccessToken) &&
                                 !IsLogging;
 
         public ICommand LoginCommand { get; }
         public ICommand OpenServerSettingsCommand { get; }
+
+        private async void InitializeAsync()
+        {
+            try
+            {
+                // 確保數據庫已初始化
+                await _databaseService.InitializeDatabaseAsync();
+
+                // 載入保存的憑證
+                await LoadSavedCredentialsAsync();
+
+                // 檢查是否應該自動登入
+                if (AutoLogin && CanLogin)
+                {
+                    await Task.Delay(1000); // 稍微延遲，確保UI已載入
+                    await LoginAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"LoginViewModel 初始化失敗: {ex.Message}");
+            }
+        }
 
         private async Task LoginAsync()
         {
@@ -125,12 +169,15 @@ namespace AnnaMessager.Core.ViewModels
                         {
                             LoginStatus = $"登入成功！歡迎，{loginInfo.Data.Nickname}";
 
-                            if (RememberCredentials)
-                                await SaveCredentialsAsync();
+                            // 保存賬號信息到數據庫
+                            await SaveAccountToDatabase(loginInfo.Data);
+
+                            if (RememberCredentials) await SaveCredentialsAsync();
 
                             // 短暫延遲後導航到主界面
                             await Task.Delay(1500);
-                            ShowViewModel<MainViewModel>();
+                            // 傳遞參數到主視圖模型以免再次呼叫 API
+                            ShowViewModel<MainViewModel>(new { userId = loginInfo.Data.UserId, nickname = loginInfo.Data.Nickname });
                         }
                         else
                         {
@@ -169,23 +216,47 @@ namespace AnnaMessager.Core.ViewModels
             }
         }
 
-        private async void LoadSavedCredentials()
+        private async Task LoadSavedCredentialsAsync()
         {
             try
             {
+                // 首先嘗試從數據庫載入默認賬號
+                var defaultAccount = await _databaseService.GetDefaultAccountAsync();
+                if (defaultAccount != null)
+                {
+                    Account = defaultAccount.Account ?? "";
+                    AccessToken = defaultAccount.AccessToken ?? "";
+                    RememberCredentials = !string.IsNullOrEmpty(defaultAccount.AccessToken);
+                    AutoLogin = RememberCredentials;
+
+                    Debug.WriteLine($"從數據庫載入默認賬號: {defaultAccount.Account} ({defaultAccount.Nickname})");
+                    return;
+                }
+
+                // 如果數據庫中沒有默認賬號，嘗試從舊的設定載入
                 if (_settingsService != null)
                 {
                     var settings = await _settingsService.LoadServerSettingsAsync();
-                    Account = settings?.Account ?? "";
-                    AccessToken = settings?.AccessToken ?? "";
-                    RememberCredentials = !string.IsNullOrEmpty(settings?.AccessToken);
+                    if (!string.IsNullOrEmpty(settings?.Account) && !string.IsNullOrEmpty(settings?.AccessToken))
+                    {
+                        Account = settings.Account;
+                        AccessToken = settings.AccessToken;
+                        RememberCredentials = true;
+                        AutoLogin = true;
+
+                        // 將舊設定遷移到數據庫
+                        await MigrateOldCredentialsToDatabase(settings);
+
+                        Debug.WriteLine($"從舊設定載入並遷移賬號: {settings.Account}");
+                        return;
+                    }
                 }
-                else
-                {
-                    Account = "";
-                    AccessToken = "";
-                    RememberCredentials = true;
-                }
+
+                // 如果都沒有，使用默認值
+                Account = "";
+                AccessToken = "";
+                RememberCredentials = true;
+                AutoLogin = false;
             }
             catch (Exception ex)
             {
@@ -193,6 +264,7 @@ namespace AnnaMessager.Core.ViewModels
                 Account = "";
                 AccessToken = "";
                 RememberCredentials = true;
+                AutoLogin = false;
             }
         }
 
@@ -200,15 +272,20 @@ namespace AnnaMessager.Core.ViewModels
         {
             try
             {
-                if (_settingsService != null)
+                // 保存到新的設定系統
+                var existingSettings = await _settingsService.LoadServerSettingsAsync() ?? new ServerSettings();
+                existingSettings.Account = Account;
+                existingSettings.AccessToken = AccessToken;
+                await _settingsService.SaveServerSettingsAsync(existingSettings);
+
+                // 保存登入憑證
+                var credentials = new LoginCredentials
                 {
-                    var existingSettings = await _settingsService.LoadServerSettingsAsync() ?? new ServerSettings();
-
-                    existingSettings.Account = Account;
-                    existingSettings.AccessToken = AccessToken;
-
-                    await _settingsService.SaveServerSettingsAsync(existingSettings);
-                }
+                    ServerUrl = existingSettings.ServerUrl,
+                    AccessToken = AccessToken,
+                    RememberCredentials = RememberCredentials
+                };
+                await _settingsService.SaveLoginCredentialsAsync(credentials);
             }
             catch (Exception ex)
             {
@@ -216,9 +293,67 @@ namespace AnnaMessager.Core.ViewModels
             }
         }
 
+        private async Task SaveAccountToDatabase(LoginInfoData loginData)
+        {
+            try
+            {
+                // 檢查賬號是否已存在
+                var existingAccount = await _databaseService.GetAccountAsync(Account);
+
+                var accountEntity = new AccountEntity
+                {
+                    Id = existingAccount?.Id ?? 0,
+                    Account = Account,
+                    AccessToken = RememberCredentials ? AccessToken : "",
+                    Nickname = loginData.Nickname ?? "",
+                    Avatar = "", // 頭像信息需要從其他API獲取
+                    LastLoginTime = DateTime.Now,
+                    IsDefault = true, // 設為默認賬號
+                    CreatedAt = existingAccount?.CreatedAt ?? DateTime.Now,
+                    UpdatedAt = DateTime.Now
+                };
+
+                await _databaseService.SaveAccountAsync(accountEntity);
+
+                // 確保設為默認賬號
+                if (accountEntity.Id > 0) await _databaseService.SetDefaultAccountAsync(accountEntity.Id);
+
+                Debug.WriteLine($"賬號信息已保存到數據庫: {Account} ({loginData.Nickname})");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"保存賬號到數據庫失敗: {ex.Message}");
+            }
+        }
+
+        private async Task MigrateOldCredentialsToDatabase(ServerSettings settings)
+        {
+            try
+            {
+                var accountEntity = new AccountEntity
+                {
+                    Account = settings.Account,
+                    AccessToken = settings.AccessToken,
+                    Nickname = "", // 舊設定中沒有暱稱信息
+                    Avatar = "",
+                    LastLoginTime = DateTime.Now,
+                    IsDefault = true,
+                    CreatedAt = DateTime.Now,
+                    UpdatedAt = DateTime.Now
+                };
+
+                await _databaseService.SaveAccountAsync(accountEntity);
+                Debug.WriteLine($"已將舊憑證遷移到數據庫: {settings.Account}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"遷移舊憑證失敗: {ex.Message}");
+            }
+        }
+
         private static bool IsValidAccount(string account)
         {
-            if (string.IsNullOrEmpty(account))
+            if (string.IsNullOrWhiteSpace(account))
                 return false;
 
             // QQ號應該是5-12位數字

@@ -1,0 +1,3 @@
+﻿<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- ChatRoomView.xaml 已廢棄。請使用 UnifiedChatView.xaml -->
+</Grid>

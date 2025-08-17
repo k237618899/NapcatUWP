@@ -8,10 +8,10 @@
 
     <Application.Resources>
         <ResourceDictionary>
-            <!-- 顏色資源 -->
-            <Color x:Key="PrimaryColor">#FF0078D4</Color>
-            <Color x:Key="AccentColor">#FF005A9E</Color>
-            <Color x:Key="UnreadBadgeColor">#FFFF4444</Color>
+            <!-- 顏色資源 (更新為品牌色 #7e6ca8) -->
+            <Color x:Key="PrimaryColor">#FF7E6CA8</Color>
+            <Color x:Key="AccentColor">#FF6F5F96</Color>
+            <Color x:Key="UnreadBadgeColor">#FFFF4081</Color>
             <Color x:Key="OnlineColor">#FF4CAF50</Color>
             <Color x:Key="OfflineColor">#FF9E9E9E</Color>
 
@@ -20,6 +20,31 @@
             <SolidColorBrush x:Key="UnreadBadgeBrush" Color="{StaticResource UnreadBadgeColor}"/>
             <SolidColorBrush x:Key="OnlineBrush" Color="{StaticResource OnlineColor}"/>
             <SolidColorBrush x:Key="OfflineBrush" Color="{StaticResource OfflineColor}"/>
+
+            <!-- 全域字型 (除圖示字型) -->
+            <FontFamily x:Key="AppFontFamily">ms-appx:///Assets/Font.ttf#SetoFont</FontFamily>
+            <!-- 注意: 不使用 BasedOn (ButtonStyle 等) 這些鍵在系統資源中不存在，會引發 XamlParseException -->
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
+            </Style>
+            <Style TargetType="Button">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
+            </Style>
+            <Style TargetType="TextBox">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
+            </Style>
+            <Style TargetType="PasswordBox">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
+            </Style>
+            <Style TargetType="CheckBox">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
+            </Style>
+            <Style TargetType="ComboBox">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
+            </Style>
+            <Style TargetType="HyperlinkButton">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
+            </Style>
 
             <!-- 字體樣式 -->
             <Style x:Key="TitleTextStyle" TargetType="TextBlock">
@@ -44,7 +69,7 @@
                 <Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseMediumBrush}"/>
             </Style>
 
-            <!-- 按鈕樣式 - 移除 CornerRadius -->
+            <!-- 按鈕樣式 -->
             <Style x:Key="FilterToggleButtonStyle" TargetType="ToggleButton">
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
@@ -52,6 +77,7 @@
                 <Setter Property="Padding" Value="12,6"/>
                 <Setter Property="FontSize" Value="14"/>
                 <Setter Property="MinWidth" Value="60"/>
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ToggleButton">
@@ -66,14 +92,12 @@
                                         <VisualState x:Name="Normal"/>
                                         <VisualState x:Name="PointerOver">
                                             <VisualState.Setters>
-                                                <Setter Target="Border.Background" 
-                                                       Value="{ThemeResource SystemControlBackgroundBaseLowBrush}"/>
+                                                <Setter Target="Border.Background" Value="{ThemeResource SystemControlBackgroundBaseLowBrush}"/>
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Pressed">
                                             <VisualState.Setters>
-                                                <Setter Target="Border.Background" 
-                                                       Value="{ThemeResource SystemControlBackgroundBaseMediumBrush}"/>
+                                                <Setter Target="Border.Background" Value="{ThemeResource SystemControlBackgroundBaseMediumBrush}"/>
                                             </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>
@@ -81,32 +105,23 @@
                                         <VisualState x:Name="Unchecked"/>
                                         <VisualState x:Name="Checked">
                                             <VisualState.Setters>
-                                                <Setter Target="Border.Background" 
-                                                       Value="{StaticResource PrimaryBrush}"/>
-                                                <Setter Target="ContentPresenter.Foreground" 
-                                                       Value="White"/>
+                                                <Setter Target="Border.Background" Value="{StaticResource PrimaryBrush}"/>
+                                                <Setter Target="ContentPresenter.Foreground" Value="White"/>
                                             </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>
                                 </VisualStateManager.VisualStateGroups>
-                                <ContentPresenter x:Name="ContentPresenter"
-                                                 Content="{TemplateBinding Content}"
-                                                 ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                 HorizontalAlignment="Center"
-                                                 VerticalAlignment="Center"
-                                                 Foreground="{TemplateBinding Foreground}"/>
+                                <ContentPresenter x:Name="ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}"/>
                             </Border>
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
             </Style>
 
-            <!-- 動畫資源 -->
             <Storyboard x:Key="FadeInAnimation">
                 <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.3"/>
             </Storyboard>
 
-            <!-- 轉換器 -->
             <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
             <converters:EmptyListToVisibilityConverter x:Key="EmptyListToVisibilityConverter"/>
         </ResourceDictionary>

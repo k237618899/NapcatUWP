@@ -98,10 +98,10 @@
                                 Width="350">
                         <!-- Logo 區域 -->
                         <StackPanel Margin="0,0,0,32" HorizontalAlignment="Center">
-                            <Ellipse Width="80" Height="80" 
-                                    Fill="{StaticResource PrimaryBrush}"
-                                    Margin="0,0,0,16">
-                            </Ellipse>
+                            <Image Width="80" Height="80"
+                                   Source="ms-appx:///Assets/Square150x150Logo.scale-200.png"
+                                   Margin="0,0,0,16">
+                            </Image>
                             
                             <TextBlock Text="AnnaMessager"
                                       Style="{StaticResource LoginTitleStyle}"/>

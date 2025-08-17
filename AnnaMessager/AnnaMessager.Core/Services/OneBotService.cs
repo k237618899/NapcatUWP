@@ -19,6 +19,8 @@ namespace AnnaMessager.Core.Services
         private readonly Dictionary<string, TaskCompletionSource<string>> _pendingRequests;
         private bool _isConnected;
         private IWebSocketClient _webSocketClient;
+        private long _apiCallCounter = 0;
+        private string _currentServerUrl;
 
         public OneBotService()
         {
@@ -41,12 +43,16 @@ namespace AnnaMessager.Core.Services
             }
         }
 
+        public string CurrentServerUrl => _currentServerUrl;
+
         #region Connection Management
 
         public async Task<bool> ConnectAsync(string serverUrl, string token)
         {
             try
             {
+                _currentServerUrl = serverUrl; // 保存當前連線地址
+
                 if (_webSocketClient != null)
                     await DisconnectAsync();
 
@@ -127,7 +133,7 @@ namespace AnnaMessager.Core.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"處理 WebSocket 消息時發生錯誤: {ex.Message}");
+                Debug.WriteLine($"處理 WebSocket 消消息時發生錯誤: {ex.Message}");
             }
         }
 
@@ -207,8 +213,39 @@ namespace AnnaMessager.Core.Services
                 switch (postType)
                 {
                     case "message":
-                        var messageEvent = json.ToObject<MessageEvent>();
-                        MessageReceived?.Invoke(this, new MessageEventArgs { Message = messageEvent });
+                    case "message_sent": // 新增: 自身發送事件 (OneBot v11 擴展)
+                        {
+                            try
+                            {
+                                var cloned = json;
+                                if (postType == "message_sent")
+                                {
+                                    // 統一 post_type 以便下游判斷邏輯一致
+                                    cloned["post_type"] = "message";
+                                    // OneBot/NapCat 的 message_sent 私聊事件包含 target_id(對端); 原模型使用 user_id 導致誤建自我聊天
+                                    try
+                                    {
+                                        var msgType = cloned["message_type"]?.ToString();
+                                        var targetId = cloned["target_id"];
+                                        if (msgType == "private" && targetId != null)
+                                        {
+                                            // 將 user_id 改寫為對端，保留原 self_id
+                                            cloned["user_id"] = targetId;
+                                          }
+                                    }
+                                    catch (Exception adjustEx)
+                                    {
+                                        Debug.WriteLine("調整 message_sent target_id 失敗: " + adjustEx.Message);
+                                    }
+                                }
+                                var messageEvent = cloned.ToObject<MessageEvent>();
+                                MessageReceived?.Invoke(this, new MessageEventArgs { Message = messageEvent });
+                            }
+                            catch (Exception ex2)
+                            {
+                                Debug.WriteLine("反序列化 message/message_sent 事件失敗: " + ex2.Message);
+                            }
+                        }
                         break;
 
                     case "notice":
@@ -243,13 +280,17 @@ namespace AnnaMessager.Core.Services
 
         private async Task<OneBotResponse<T>> SendApiRequestAsync<T>(string action, object parameters = null)
         {
+            var callId = Interlocked.Increment(ref _apiCallCounter);
             if (!IsConnected)
+            {
+                Debug.WriteLine($"[OneBotService][#{callId}] 尚未連線，忽略 API 呼叫: {action}");
                 return new OneBotResponse<T>
                 {
                     Status = "failed",
                     RetCode = -1,
                     Data = default
                 };
+            }
 
             var echo = Guid.NewGuid().ToString();
             var request = new OneBotRequest
@@ -268,6 +309,10 @@ namespace AnnaMessager.Core.Services
             try
             {
                 var json = JsonConvert.SerializeObject(request);
+
+                Debug.WriteLine($"[OneBotService][#{callId}] 呼叫 {action} 開始 (已連線={IsConnected})");
+                Debug.WriteLine($"[OneBotService][#{callId}] 送出 {action} 請求: {json}");
+
                 await _webSocketClient.SendAsync(json);
 
                 // 等待響应，设置30秒超时
@@ -276,6 +321,7 @@ namespace AnnaMessager.Core.Services
                     cts.Token.Register(() => tcs.TrySetCanceled());
 
                     var responseJson = await tcs.Task;
+                    Debug.WriteLine($"[OneBotService][#{callId}] 收到 {action} 響應: {responseJson.Substring(0, Math.Min(200, responseJson.Length))}...");
                     return JsonConvert.DeserializeObject<OneBotResponse<T>>(responseJson);
                 }
             }
@@ -286,6 +332,7 @@ namespace AnnaMessager.Core.Services
                     _pendingRequests.Remove(echo);
                 }
 
+                Debug.WriteLine($"[OneBotService][#{callId}] {action} 超時");
                 return new OneBotResponse<T>
                 {
                     Status = "failed",
@@ -295,7 +342,7 @@ namespace AnnaMessager.Core.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"發送API請求失败: {ex.Message}");
+                Debug.WriteLine($"[OneBotService][#{callId}] {action} 發送失敗: {ex.Message}");
 
                 lock (_lockObject)
                 {
@@ -491,10 +538,10 @@ namespace AnnaMessager.Core.Services
             });
         }
 
-        // 获取信息 API - 移除 new 關鍵字
-        public async Task<OneBotResponse<LoginInfo>> GetLoginInfoAsync()
+        // 获取信息 API - 修正：返回 LoginInfoData
+        public async Task<OneBotResponse<LoginInfoData>> GetLoginInfoAsync()
         {
-            return await SendApiRequestAsync<LoginInfo>("get_login_info");
+            return await SendApiRequestAsync<LoginInfoData>("get_login_info");
         }
 
         public async Task<OneBotResponse<StrangerInfo>> GetStrangerInfoAsync(long userId, bool noCache = false)
@@ -560,26 +607,27 @@ namespace AnnaMessager.Core.Services
             return await SendApiRequestAsync<object>("get_credentials", new { domain });
         }
 
-        public async Task<OneBotResponse<FileInfo>> GetRecordAsync(string file, string outFormat)
+        // 修正：使用 OneBotFileInfo 而非 FileInfo
+        public async Task<OneBotResponse<OneBotFileInfo>> GetRecordAsync(string file, string outFormat)
         {
             var parameters = new
             {
                 file,
                 out_format = outFormat
             };
-            return await SendApiRequestAsync<FileInfo>("get_record", parameters);
+            return await SendApiRequestAsync<OneBotFileInfo>("get_record", parameters);
         }
 
-        public async Task<OneBotResponse<FileInfo>> GetImageAsync(string file)
+        public async Task<OneBotResponse<OneBotFileInfo>> GetImageAsync(string file)
         {
             var parameters = new { file };
-            return await SendApiRequestAsync<FileInfo>("get_image", parameters);
+            return await SendApiRequestAsync<OneBotFileInfo>("get_image", parameters);
         }
 
-        public async Task<OneBotResponse<FileInfo>> GetFileAsync(string fileId)
+        public async Task<OneBotResponse<OneBotFileInfo>> GetFileAsync(string fileId)
         {
             var parameters = new { file_id = fileId };
-            return await SendApiRequestAsync<FileInfo>("get_file", parameters);
+            return await SendApiRequestAsync<OneBotFileInfo>("get_file", parameters);
         }
 
         public async Task<OneBotResponse<object>> CanSendImageAsync()
@@ -610,6 +658,13 @@ namespace AnnaMessager.Core.Services
         public async Task<OneBotResponse<object>> CleanCacheAsync()
         {
             return await SendApiRequestAsync<object>("clean_cache");
+        }
+
+        public async Task<OneBotResponse<object>> GetUserStatusAsync(long userId)
+        {
+            // NapCat 擴展接口名稱推測為 nc_get_user_status
+            var parameters = new { user_id = userId };
+            return await SendApiRequestAsync<object>("nc_get_user_status", parameters);
         }
 
         #endregion
@@ -817,22 +872,45 @@ namespace AnnaMessager.Core.Services
             };
         }
 
-        #endregion
+        // 兼容多載 (簡單包裝，暫不使用額外參數)
+        public Task<OneBotResponse<MessageHistoryData>> GetMessageHistoryAsync(long chatId, bool isGroup, int count)
+            => GetMessageHistoryAsync(chatId, isGroup);
+        public Task<OneBotResponse<MessageHistoryData>> GetMessageHistoryAsync(long chatId, bool isGroup, int count, int startSeq)
+            => GetMessageHistoryAsync(chatId, isGroup);
+        public Task<OneBotResponse<MessageHistoryData>> GetMessageHistoryAsync(long chatId, bool isGroup, int count, int startSeq, int direction)
+            => GetMessageHistoryAsync(chatId, isGroup);
+        public Task<OneBotResponse<MessageHistoryData>> GetMessageHistoryAsync(long chatId, bool isGroup, int count, int startSeq, int direction, bool includeSelf)
+            => GetMessageHistoryAsync(chatId, isGroup);
+        public Task<OneBotResponse<MessageHistoryData>> GetMessageHistoryAsync(long chatId, bool isGroup, int count, int startSeq, int direction, bool includeSelf, bool forceRemote)
+            => GetMessageHistoryAsync(chatId, isGroup);
+        // 實作接口要求的別名方法 (介面新增後需補齊)
+        public Task<OneBotResponse<object>> SendPrivateMsgAsync(long userId, string message, bool autoEscape = false)
+            => SendPrivateMessageAsync(userId, message, autoEscape);
+        public Task<OneBotResponse<object>> SendGroupMsgAsync(long groupId, string message, bool autoEscape = false)
+            => SendGroupMessageAsync(groupId, message, autoEscape);
+        public Task<OneBotResponse<List<FriendCategoryItem>>> GetFriendsWithCategoryAsync()
+            => SendApiRequestAsync<List<FriendCategoryItem>>("get_friends_with_category");
+        public Task<OneBotResponse<List<RecentContact>>> GetRecentContactAsync(int count = 30)
+            => SendApiRequestAsync<List<RecentContact>>("get_recent_contact", new { count });
+        #endregion // NapCat 擴展 API Methods 結束
 
-        #region 别名方法
-
-        public async Task<OneBotResponse<object>> SendPrivateMsgAsync(long userId, string message,
-            bool autoEscape = false)
+        public async Task<List<MessageHistoryItem>> TryGetRecentMessagesAsync(long id, bool isGroup, int limit)
         {
-            return await SendPrivateMessageAsync(userId, message, autoEscape);
+            try
+            {
+                OneBotResponse<MessageHistoryResponse> resp = isGroup
+                    ? await GetGroupMsgHistoryAsync(id, 0, limit)
+                    : await GetFriendMsgHistoryAsync(id, 0, limit);
+                if (resp != null && resp.Status == "ok" && resp.Data != null && resp.Data.Messages != null)
+                {
+                    return resp.Data.Messages;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"TryGetRecentMessagesAsync 失敗: {ex.Message}");
+            }
+            return new List<MessageHistoryItem>();
         }
-
-        public async Task<OneBotResponse<object>> SendGroupMsgAsync(long groupId, string message,
-            bool autoEscape = false)
-        {
-            return await SendGroupMessageAsync(groupId, message, autoEscape);
-        }
-
-        #endregion
     }
 }
