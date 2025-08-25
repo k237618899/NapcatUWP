@@ -45,10 +45,70 @@ namespace AnnaMessager.UWP.Views
                 ViewModel.PropertyChanged += ViewModel_PropertyChanged;
                 if (ViewModel.Messages != null) ViewModel.Messages.CollectionChanged += Messages_CollectionChanged;
             }
-            ScrollToBottom();
+            
             this.AddHandler(UIElement.TappedEvent, new TappedEventHandler(OnAnyTapped), true);
             _mediaTimer.Tick += _mediaTimer_Tick;
             _mediaPlayer.CurrentStateChanged += _mediaPlayer_CurrentStateChanged;
+        }
+
+        // 新增: 處理段內圖片載入失敗 (避免 XAML 綁定錯誤)
+        private void SegmentImage_ImageFailed(object sender, ExceptionRoutedEventArgs e)
+        {
+            try
+            {
+                var img = sender as Image;
+                if (img?.DataContext is MessageSegment seg)
+                {
+                    object fileObj; seg.Data.TryGetValue("file", out fileObj);
+                    var fileId = fileObj?.ToString();
+                    object urlObj; seg.Data.TryGetValue("url", out urlObj);
+                    var originalUrl = urlObj?.ToString();
+                    Debug.WriteLine($"[ChatView] Segment image load failed file={fileId} url={originalUrl} error={e.ErrorMessage}");
+                    if (!string.IsNullOrEmpty(fileId) && (string.IsNullOrEmpty(originalUrl) || originalUrl.IndexOf("http", StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        // 嘗試組合常見 QQ 圖片備援 URL (僅猜測性)
+                        var fallback = $"https://gchat.qpic.cn/gchatpic_new/0/0-0-{fileId}/0";
+                        try { img.Source = new BitmapImage(new Uri(fallback)); Debug.WriteLine("[ChatView] Try fallback url: " + fallback); }
+                        catch (Exception ex2) { Debug.WriteLine("[ChatView] Fallback failed: " + ex2.Message); }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[ChatView] SegmentImage_ImageFailed handler exception: " + ex.Message);
+            }
+        }
+
+        // 新增: 處理發送者頭像載入失敗
+        private void SenderAvatarImage_ImageFailed(object sender, ExceptionRoutedEventArgs e)
+        {
+            try
+            {
+                var img = sender as Image;
+                if (img?.DataContext is MessageItem msg && msg.SenderId > 0)
+                {
+                    Debug.WriteLine($"[ChatView] Sender avatar load failed for {msg.SenderId}, trying to reload");
+                    
+                    // 重新構建頭像 URL
+                    var newAvatarUrl = BuildAvatarUrl(msg.SenderId);
+                    if (!string.IsNullOrEmpty(newAvatarUrl) && newAvatarUrl != msg.SenderAvatar)
+                    {
+                        msg.SenderAvatar = newAvatarUrl;
+                        Debug.WriteLine($"[ChatView] Updated sender avatar URL: {msg.SenderId} -> {newAvatarUrl}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ChatView] SenderAvatarImage_ImageFailed handler exception: {ex.Message}");
+            }
+        }
+
+        // 輔助方法：構建頭像 URL
+        private string BuildAvatarUrl(long senderId)
+        {
+            if (senderId <= 0) return null;
+            return $"https://q1.qlogo.cn/g?b=qq&nk={senderId}&s=100";
         }
 
         private async void Messages_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
@@ -57,8 +117,41 @@ namespace AnnaMessager.UWP.Views
             {
                 await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Low, () =>
                 {
-                    if (MessageScrollViewer != null && MessageScrollViewer.VerticalOffset + 120 >= MessageScrollViewer.ScrollableHeight)
+                    // 修复：改善自动滚动逻辑
+                    if (MessageScrollViewer != null)
+                    {
+                        // 如果用户接近底部（距离底部不超过200像素），则自动滚动
+                        var threshold = 200;
+                        var isNearBottom = MessageScrollViewer.VerticalOffset + threshold >= MessageScrollViewer.ScrollableHeight;
+                        
+                        if (isNearBottom || MessageScrollViewer.ScrollableHeight == 0)
+                        {
+                            // 延迟一点时间，确保新消息已经渲染
+                            _ = Task.Run(async () =>
+                            {
+                                await Task.Delay(100);
+                                await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                                {
+                                    ScrollToBottom();
+                                });
+                            });
+                        }
+                    }
+                });
+            }
+            // 修复：处理重置操作（如批量加载历史消息后)
+            else if (e.Action == NotifyCollectionChangedAction.Reset || 
+                     (e.Action == NotifyCollectionChangedAction.Replace && e.NewItems?.Count > 1))
+            {
+                // 延迟滚动，确保所有消息渲染完成
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(800); // 增加延迟时间，确保缓存消息加载完成
+                    await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                    {
                         ScrollToBottom();
+                        Debug.WriteLine("[ChatView] 批量消息加载完成，滚动到底部");
+                    });
                 });
             }
         }
@@ -73,11 +166,58 @@ namespace AnnaMessager.UWP.Views
                     TryScrollToMessage(id);
                 }
             }
+            // 修复：监听消息列表初始化完成
+            else if (e.PropertyName == nameof(ChatViewModel.Messages))
+            {
+                if (ViewModel.Messages != null)
+                {
+                    ViewModel.Messages.CollectionChanged -= Messages_CollectionChanged; // 避免重复订阅
+                    ViewModel.Messages.CollectionChanged += Messages_CollectionChanged;
+                    
+                    // 延迟滚动到底部
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(500);
+                        await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                        {
+                            ScrollToBottom();
+                        });
+                    });
+                }
+            }
+            // 修复：监听加载状态变化
+            else if (e.PropertyName == nameof(ChatViewModel.IsLoading))
+            {
+                // 当加载完成时滚动到底部
+                if (!ViewModel.IsLoading)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(500);
+                        await CoreApplication.MainView.CoreWindow.Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                        {
+                            ScrollToBottom();
+                            Debug.WriteLine("[ChatView] 加载完成，滚动到底部");
+                        });
+                    });
+                }
+            }
         }
 
         private void ScrollToBottom()
         {
-            try { MessageScrollViewer?.ChangeView(null, MessageScrollViewer.ScrollableHeight, null, true); } catch { }
+            try 
+            { 
+                if (MessageScrollViewer != null && MessageScrollViewer.ScrollableHeight > 0)
+                {
+                    MessageScrollViewer.ChangeView(null, MessageScrollViewer.ScrollableHeight, null, false);
+                    Debug.WriteLine($"[ChatView] 滚动到底部: ScrollableHeight={MessageScrollViewer.ScrollableHeight}");
+                }
+            } 
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ChatView] 滚动失败: {ex.Message}");
+            }
         }
 
         private void InputBox_KeyDown(object sender, KeyRoutedEventArgs e)

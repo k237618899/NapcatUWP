@@ -79,14 +79,22 @@ namespace AnnaMessager.UWP.Converters
     }
     public class SegmentToImageUrlConverter : IValueConverter
     {
+        private string Sanitize(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return url;
+            // 只需要處理常見 &amp; 編碼即可（NapCat 回傳 raw_message 中常見）
+            if (url.IndexOf("&amp;", StringComparison.OrdinalIgnoreCase) >= 0)
+                url = url.Replace("&amp;", "&");
+            return url;
+        }
         public object Convert(object value, Type targetType, object parameter, string language)
         {
             var t = SegmentHelper.GetSegmentType(value);
             if (!string.Equals(t, "image", StringComparison.OrdinalIgnoreCase)) return null;
             var data = SegmentHelper.GetSegmentData(value);
             if (data == null) return null;
-            if (data.TryGetValue("url", out var u) && u != null && !string.IsNullOrEmpty(u.ToString())) return u.ToString();
-            if (data.TryGetValue("file", out var f) && f != null && !string.IsNullOrEmpty(f.ToString())) return f.ToString();
+            if (data.TryGetValue("url", out var u) && u != null && !string.IsNullOrEmpty(u.ToString())) return Sanitize(u.ToString());
+            if (data.TryGetValue("file", out var f) && f != null && !string.IsNullOrEmpty(f.ToString())) return Sanitize(f.ToString());
             return null;
         }
         public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotImplementedException();

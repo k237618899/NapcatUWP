@@ -27,6 +27,8 @@
         </Style>
         <converters:BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         <converters:StringNullOrEmptyToVisibilityConverter x:Key="StringNullOrEmptyToVisibilityConverter"/>
+        <converters:FirstLetterConverter x:Key="FirstLetterConverter"/>
+        <converters:PathToUriConverter x:Key="PathToUriConverter"/>
         <converters:SegmentIsTextVisibilityConverter x:Key="SegmentIsTextVisibilityConverter"/>
         <converters:SegmentIsImageVisibilityConverter x:Key="SegmentIsImageVisibilityConverter"/>
         <converters:SegmentToTextConverter x:Key="SegmentToTextConverter"/>
@@ -43,7 +45,7 @@
             <StackPanel Margin="0,0,0,2">
                 <TextBlock Text="{Binding Converter={StaticResource SegmentToTextConverter}}" TextWrapping="Wrap" Visibility="{Binding Converter={StaticResource SegmentIsTextVisibilityConverter}}" Foreground="#222" FontSize="14"/>
                 <Grid Visibility="{Binding Converter={StaticResource TypeEqualsVisibilityConverter}, ConverterParameter=image}" Margin="0,4,0,4">
-                    <Image Source="{Binding Converter={StaticResource SegmentToImageUrlConverter}}" Style="{StaticResource PreviewImageStyle}" Tapped="OnAnyTapped"/>
+                    <Image Source="{Binding Converter={StaticResource SegmentToImageUrlConverter}}" Style="{StaticResource PreviewImageStyle}" Tapped="OnAnyTapped" ImageFailed="SegmentImage_ImageFailed"/>
                 </Grid>
                 <StackPanel Orientation="Horizontal" Visibility="{Binding Converter={StaticResource TypeEqualsVisibilityConverter}, ConverterParameter=record}" Margin="0,4,0,4">
                     <Button Content="▶" Width="36" Tag="record" Click="SegmentPlay_Click"/>
@@ -58,7 +60,7 @@
             <StackPanel Margin="0,0,0,2">
                 <TextBlock Text="{Binding Converter={StaticResource SegmentToTextConverter}}" TextWrapping="Wrap" Visibility="{Binding Converter={StaticResource SegmentIsTextVisibilityConverter}}" Foreground="White" FontSize="14"/>
                 <Grid Visibility="{Binding Converter={StaticResource TypeEqualsVisibilityConverter}, ConverterParameter=image}" Margin="0,4,0,4">
-                    <Image Source="{Binding Converter={StaticResource SegmentToImageUrlConverter}}" Style="{StaticResource PreviewImageStyle}" Tapped="OnAnyTapped"/>
+                    <Image Source="{Binding Converter={StaticResource SegmentToImageUrlConverter}}" Style="{StaticResource PreviewImageStyle}" Tapped="OnAnyTapped" ImageFailed="SegmentImage_ImageFailed"/>
                 </Grid>
                 <StackPanel Orientation="Horizontal" Visibility="{Binding Converter={StaticResource TypeEqualsVisibilityConverter}, ConverterParameter=record}" Margin="0,4,0,4">
                     <Button Content="▶" Width="36" Tag="record" Click="SegmentPlay_Click"/>
@@ -131,17 +133,25 @@
         <Grid Grid.Row="0" Height="52" Background="#F5FBFF" Padding="8,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <Button Style="{StaticResource IconBtnStyle}" Click="BackButton_Click">
                 <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE72B;"/>
             </Button>
-            <StackPanel Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Center">
+            <!-- 修复：添加聊天头像显示 -->
+            <Border Grid.Column="1" Style="{StaticResource AvatarBorderStyle}" Margin="8,6,0,6" Width="36" Height="36">
+                <Grid>
+                    <Image Source="{Binding ChatAvatar, Converter={StaticResource PathToUriConverter}}" Stretch="UniformToFill" Visibility="{Binding ChatAvatar, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}"/>
+                    <TextBlock Text="{Binding ChatTitle, Converter={StaticResource FirstLetterConverter}}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="12" Foreground="#555" Visibility="{Binding ChatAvatar, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}, ConverterParameter=inverted}"/>
+                </Grid>
+            </Border>
+            <StackPanel Grid.Column="2" Margin="8,0,0,0" VerticalAlignment="Center">
                 <TextBlock Text="{Binding ChatTitle}" FontSize="17" FontWeight="SemiBold" Foreground="#0A92B6"/>
                 <TextBlock Text="{Binding OnlineStatus}" FontSize="12" Foreground="#4CA4B6"/>
             </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                 <Button Style="{StaticResource IconBtnStyle}" Margin="0,0,4,0"><FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE721;"/></Button>
                 <Button Style="{StaticResource IconBtnStyle}" Margin="0,0,4,0"><FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE717;"/></Button>
                 <Button Style="{StaticResource IconBtnStyle}"><FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE700;"/></Button>
@@ -171,7 +181,7 @@
                                     </Grid.ColumnDefinitions>
                                     <Border Style="{StaticResource AvatarBorderStyle}" Grid.Column="0">
                                         <Grid>
-                                            <Image Source="{Binding SenderAvatar}" Stretch="UniformToFill" Visibility="{Binding SenderAvatar, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}"/>
+                                            <Image Source="{Binding SenderAvatar, Converter={StaticResource PathToUriConverter}}" Stretch="UniformToFill" Visibility="{Binding SenderAvatar, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" ImageFailed="SenderAvatarImage_ImageFailed"/>
                                             <TextBlock Text="{Binding SenderInitial}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="14" Foreground="#555" Visibility="{Binding SenderAvatar, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}, ConverterParameter=inverted}"/>
                                         </Grid>
                                     </Border>
@@ -180,9 +190,12 @@
                                             <TextBlock Text="{Binding SenderName}" FontSize="11" Foreground="#0A92B6" Margin="0,0,0,4" Visibility="{Binding ShowSenderName, Converter={StaticResource BoolToVisibilityConverter}}"/>
                                             <ItemsControl ItemsSource="{Binding RichSegments}" Visibility="{Binding HasRichSegments, Converter={StaticResource BoolToVisibilityConverter}}" ItemTemplate="{StaticResource RichSegmentsTemplateIncoming}"/>
                                             <TextBlock Text="{Binding Content}" FontSize="14" TextWrapping="Wrap" Foreground="#222" Visibility="{Binding HasRichSegments, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
-                                            <Image Source="{Binding ImageUrl}" Style="{StaticResource PreviewImageStyle}" Visibility="{Binding ImageUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}"/>
+                                            <Image Source="{Binding ImageUrl}" Style="{StaticResource PreviewImageStyle}" Visibility="{Binding ImageUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" ImageFailed="SegmentImage_ImageFailed"/>
                                             <Border Style="{StaticResource ReplyPreviewStyle}" Visibility="{Binding HasReply, Converter={StaticResource BoolToVisibilityConverter}}" Tag="{Binding ReplyTargetId}" Tapped="ReplyBorder_Tapped">
-                                                <TextBlock Text="{Binding ReplySummary}" FontSize="12" Foreground="#555" TextWrapping="Wrap"/>
+                                                <StackPanel>
+                                                    <TextBlock Text="回复:" FontSize="10" Foreground="#666" Margin="0,0,0,2"/>
+                                                    <TextBlock Text="{Binding ReplySummary}" FontSize="12" Foreground="#555" TextWrapping="Wrap" MaxLines="2"/>
+                                                </StackPanel>
                                             </Border>
                                         </StackPanel>
                                     </Border>
@@ -194,9 +207,12 @@
                                             <StackPanel>
                                                 <ItemsControl ItemsSource="{Binding RichSegments}" Visibility="{Binding HasRichSegments, Converter={StaticResource BoolToVisibilityConverter}}" ItemTemplate="{StaticResource RichSegmentsTemplateOutgoing}"/>
                                                 <TextBlock Text="{Binding Content}" FontSize="14" TextWrapping="Wrap" Foreground="White" Visibility="{Binding HasRichSegments, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
-                                                <Image Source="{Binding ImageUrl}" Style="{StaticResource PreviewImageStyle}" Visibility="{Binding ImageUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}"/>
+                                                <Image Source="{Binding ImageUrl}" Style="{StaticResource PreviewImageStyle}" Visibility="{Binding ImageUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" ImageFailed="SegmentImage_ImageFailed"/>
                                                 <Border Style="{StaticResource ReplyPreviewOutgoingStyle}" Visibility="{Binding HasReply, Converter={StaticResource BoolToVisibilityConverter}}" Tag="{Binding ReplyTargetId}" Tapped="ReplyBorder_Tapped">
-                                                    <TextBlock Text="{Binding ReplySummary}" FontSize="12" Foreground="#DDD" TextWrapping="Wrap"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="回复:" FontSize="10" Foreground="#CCC" Margin="0,0,0,2"/>
+                                                        <TextBlock Text="{Binding ReplySummary}" FontSize="12" Foreground="#DDD" TextWrapping="Wrap" MaxLines="2"/>
+                                                    </StackPanel>
                                                 </Border>
                                             </StackPanel>
                                         </Border>
@@ -204,7 +220,7 @@
                                             <StackPanel>
                                                 <ItemsControl ItemsSource="{Binding RichSegments}" Visibility="{Binding HasRichSegments, Converter={StaticResource BoolToVisibilityConverter}}" ItemTemplate="{StaticResource RichSegmentsTemplateOutgoing}"/>
                                                 <TextBlock Text="{Binding Content}" FontSize="14" TextWrapping="Wrap" Foreground="White" Visibility="{Binding HasRichSegments, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=inverted}"/>
-                                                <Image Source="{Binding ImageUrl}" Style="{StaticResource PreviewImageStyle}" Visibility="{Binding ImageUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}"/>
+                                                <Image Source="{Binding ImageUrl}" Style="{StaticResource PreviewImageStyle}" Visibility="{Binding ImageUrl, Converter={StaticResource StringNullOrEmptyToVisibilityConverter}}" ImageFailed="SegmentImage_ImageFailed"/>
                                                 <TextBlock Text="(預載)" FontSize="12" Foreground="#E0D8F8"/>
                                             </StackPanel>
                                         </Border>

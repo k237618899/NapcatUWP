@@ -830,7 +830,8 @@ namespace AnnaMessager.Core.Services
                                     Role = m.Sender.Role
                                 },
                                 Time = m.Time,
-                                Message = m.Message
+                                // 修复：优先使用 RawMessage，如果为空则使用 Message
+                                Message = !string.IsNullOrEmpty(m.RawMessage) ? m.RawMessage : m.Message
                             }).ToList()
                         }
                     };
@@ -855,7 +856,8 @@ namespace AnnaMessager.Core.Services
                                     Nickname = m.Sender.Nickname
                                 },
                                 Time = m.Time,
-                                Message = m.Message
+                                // 修复：优先使用 RawMessage，如果为空则使用 Message
+                                Message = !string.IsNullOrEmpty(m.RawMessage) ? m.RawMessage : m.Message
                             }).ToList()
                         }
                     };

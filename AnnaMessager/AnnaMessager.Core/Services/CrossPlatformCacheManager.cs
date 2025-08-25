@@ -537,6 +537,8 @@ namespace AnnaMessager.Core.Services
                             existing.ReplySummary = message.ReplySummary;
                             existing.ReplyTargetId = message.ReplyTargetId;
                             existing.IsPreview = message.IsPreview;
+                            existing.RawMessage = string.IsNullOrEmpty(message.RawMessage) ? existing.RawMessage : message.RawMessage; // 新增: 同步 RawMessage
+                            existing.RichSegmentsSerialized = message.RichSegmentsSerialized ?? existing.RichSegmentsSerialized;
                             // 同步 RichSegments (若新消息有內容且舊的為空或較少)
                             try
                             {
@@ -594,6 +596,8 @@ namespace AnnaMessager.Core.Services
                                 existing.ReplySummary = m.ReplySummary;
                                 existing.ReplyTargetId = m.ReplyTargetId;
                                 existing.IsPreview = m.IsPreview;
+                                existing.RawMessage = string.IsNullOrEmpty(m.RawMessage) ? existing.RawMessage : m.RawMessage; // 新增: 同步 RawMessage
+                                existing.RichSegmentsSerialized = m.RichSegmentsSerialized ?? existing.RichSegmentsSerialized;
                                 try
                                 {
                                     if (m.RichSegments != null && m.RichSegments.Count > 0)

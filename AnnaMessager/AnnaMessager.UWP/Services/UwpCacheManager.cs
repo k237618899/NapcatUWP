@@ -267,7 +267,7 @@ namespace AnnaMessager.UWP.Services
 
         #endregion
 
-        #region 緩存管理
+        #region 緩解管理
 
         public async Task DeleteChatCacheAsync(long chatId, bool isGroup)
         {
@@ -457,20 +457,117 @@ namespace AnnaMessager.UWP.Services
                                         VideoFile = reader.IsDBNull(13) ? null : reader.GetString(13),
                                         ForwardId = reader.IsDBNull(14) ? null : reader.GetString(14)
                                     };
+                                    
+                                    bool hasCompleteExtraData = false;
+                                    
+                                    // 解析 ExtraData (JSON 序列化的完整 MessageItem) 以恢復 RawMessage / RichSegments
+                                    try
+                                    {
+                                        if (!reader.IsDBNull(15))
+                                        {
+                                            var extraJson = reader.GetString(15);
+                                            if (!string.IsNullOrEmpty(extraJson))
+                                            {
+                                                var full = JsonConvert.DeserializeObject<MessageItem>(extraJson);
+                                                if (full != null)
+                                                {
+                                                    // 修复：优先从ExtraData恢复完整信息
+                                                    if (!string.IsNullOrEmpty(full.RawMessage))
+                                                    {
+                                                        item.RawMessage = full.RawMessage;
+                                                        Debug.WriteLine($"从ExtraData恢复RawMessage: {item.MessageId}, Raw: {full.RawMessage}");
+                                                    }
+                                                    
+                                                    // 恢复其他字段
+                                                    if (string.IsNullOrEmpty(item.ImageUrl) && !string.IsNullOrEmpty(full.ImageUrl)) item.ImageUrl = full.ImageUrl;
+                                                    if (string.IsNullOrEmpty(item.AudioFile) && !string.IsNullOrEmpty(full.AudioFile)) item.AudioFile = full.AudioFile;
+                                                    if (string.IsNullOrEmpty(item.VideoFile) && !string.IsNullOrEmpty(full.VideoFile)) item.VideoFile = full.VideoFile;
+                                                    if (string.IsNullOrEmpty(item.FaceId) && !string.IsNullOrEmpty(full.FaceId)) item.FaceId = full.FaceId;
+                                                    if (string.IsNullOrEmpty(item.ForwardId) && !string.IsNullOrEmpty(full.ForwardId)) item.ForwardId = full.ForwardId;
+                                                    
+                                                    // 恢复RichSegments
+                                                    if (full.RichSegments != null && full.RichSegments.Count > 0)
+                                                    {
+                                                        item.RichSegments.Clear();
+                                                        foreach (var s in full.RichSegments)
+                                                        {
+                                                            item.RichSegments.Add(s);
+                                                        }
+                                                        hasCompleteExtraData = true;
+                                                        Debug.WriteLine($"从ExtraData恢复RichSegments: {item.MessageId}, 段落数: {full.RichSegments.Count}");
+                                                    }
+                                                    
+                                                    // 恢复消息类型
+                                                    if (item.MessageType == MessageType.Text && full.MessageType != MessageType.Text)
+                                                    {
+                                                        item.MessageType = full.MessageType;
+                                                        Debug.WriteLine($"从ExtraData更正消息类型: {item.MessageId}, {MessageType.Text} -> {full.MessageType}");
+                                                    }
+                                                    
+                                                    // 恢复回复信息
+                                                    if (!string.IsNullOrEmpty(full.ReplySummary)) item.ReplySummary = full.ReplySummary;
+                                                    if (full.ReplyTargetId != 0) item.ReplyTargetId = full.ReplyTargetId;
+                                                    
+                                                    // 修复：恢复显示内容，优先使用ExtraData中的内容
+                                                    if (!string.IsNullOrEmpty(full.Content) && item.MessageType != MessageType.Text)
+                                                    {
+                                                        item.Content = full.Content;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch (Exception exExtra)
+                                    {
+                                        Debug.WriteLine($"解析ExtraData失败: {exExtra.Message}");
+                                    }
+                                    
+                                    // 如果ExtraData恢复失败或不完整，且有RawMessage，从RawMessage重新解析
+                                    if (!hasCompleteExtraData && !string.IsNullOrEmpty(item.RawMessage) && item.RawMessage.Contains("[CQ:"))
+                                    {
+                                        Debug.WriteLine($"从RawMessage重新解析段落: {item.MessageId}, Raw: {item.RawMessage}");
+                                        try
+                                        {
+                                            ParseCQMessageForCache(item.RawMessage, out var segs, out var mt, out var firstImg, out var display);
+                                            if (segs != null && segs.Count > 0)
+                                            {
+                                                item.RichSegments.Clear();
+                                                foreach (var s in segs) item.RichSegments.Add(s);
+                                                
+                                                if (item.MessageType == MessageType.Text && mt != MessageType.Text) 
+                                                    item.MessageType = mt;
+                                                
+                                                if (string.IsNullOrEmpty(item.ImageUrl) && !string.IsNullOrEmpty(firstImg)) 
+                                                    item.ImageUrl = firstImg;
+                                                
+                                                // 修复：使用解析出的正确显示内容，而不是数据库中已损坏的Content
+                                                if (!string.IsNullOrEmpty(display)) 
+                                                    item.Content = display;
+                                                
+                                                Debug.WriteLine($"重新解析成功: {item.MessageId}, Type: {mt}, ImageUrl: {firstImg}, Segments: {segs.Count}, Content: {display}");
+                                            }
+                                        }
+                                        catch (Exception parseEx)
+                                        {
+                                            Debug.WriteLine($"重新解析失败: {parseEx.Message}");
+                                        }
+                                    }
+                                    
                                     list.Add(item);
                                 }
                                 catch (Exception exRow)
                                 {
-                                    Debug.WriteLine($"解析消息緩存列失敗: {exRow.Message}");
+                                    Debug.WriteLine($"解析消息缓存行失败: {exRow.Message}");
                                 }
                             }
                         }
                     }
                 }
+                Debug.WriteLine($"载入缓存消息完成: ChatId={chatId}, IsGroup={isGroup}, Count={list.Count}");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"載入消息緩存失敗: {ex.Message}");
+                Debug.WriteLine($"载入消息缓存失败: {ex.Message}");
             }
             return list;
         }
@@ -543,6 +640,107 @@ namespace AnnaMessager.UWP.Services
             catch (Exception ex)
             {
                 Debug.WriteLine($"保存消息記錄失敗: {ex.Message}");
+            }
+        }
+
+        // 添加解析 CQ 消息的輔助方法 (簡化版，用於緩存恢復)
+        private void ParseCQMessageForCache(string raw, out List<MessageSegment> segments, out MessageType overallType, out string firstImageUrl, out string displayText)
+        {
+            segments = new List<MessageSegment>();
+            overallType = MessageType.Text;
+            firstImageUrl = null;
+            displayText = string.Empty;
+            
+            if (string.IsNullOrEmpty(raw)) return;
+            
+            try
+            {
+                var pattern = new System.Text.RegularExpressions.Regex("\\[CQ:([^,\\n\\r\\]]+)((?:,[^\\]]+)*)\\]");
+                int lastIndex = 0;
+                
+                foreach (System.Text.RegularExpressions.Match m in pattern.Matches(raw))
+                {
+                    if (m.Index > lastIndex)
+                    {
+                        var plain = raw.Substring(lastIndex, m.Index - lastIndex);
+                        if (!string.IsNullOrEmpty(plain))
+                        {
+                            segments.Add(new MessageSegment("text") { Data = new Dictionary<string, object> { { "text", plain } } });
+                            displayText += plain;
+                        }
+                    }
+                    
+                    var type = m.Groups[1].Value.Trim();
+                    var dataStr = m.Groups[2].Value;
+                    var dict = new Dictionary<string, object>();
+                    
+                    if (!string.IsNullOrEmpty(dataStr))
+                    {
+                        foreach (var kv in dataStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            var eq = kv.IndexOf('=');
+                            if (eq > 0 && eq < kv.Length - 1)
+                                dict[kv.Substring(0, eq)] = kv.Substring(eq + 1);
+                        }
+                    }
+                    
+                    segments.Add(new MessageSegment(type) { Data = dict });
+                    
+                    switch (type)
+                    {
+                        case "image":
+                            if (dict.ContainsKey("url") && firstImageUrl == null) firstImageUrl = dict["url"].ToString();
+                            else if (dict.ContainsKey("file") && firstImageUrl == null) firstImageUrl = dict["file"].ToString();
+                            if (overallType == MessageType.Text) overallType = MessageType.Image;
+                            displayText += "[圖片]";
+                            break;
+                        case "record":
+                            if (overallType == MessageType.Text) overallType = MessageType.Voice;
+                            displayText += "[語音]";
+                            break;
+                        case "video":
+                            if (overallType == MessageType.Text) overallType = MessageType.Video;
+                            displayText += "[視頻]";
+                            break;
+                        case "reply":
+                            displayText += "[回覆]";
+                            break;
+                        case "at":
+                            var qq = dict.ContainsKey("qq") ? dict["qq"].ToString() : "";
+                            displayText += (qq == "all" ? "@所有人 " : ("@" + qq + " "));
+                            break;
+                        case "face":
+                            displayText += "[表情]";
+                            break;
+                        default:
+                            displayText += "[" + type + "]";
+                            break;
+                    }
+                    lastIndex = m.Index + m.Length;
+                }
+                
+                if (lastIndex < raw.Length)
+                {
+                    var remain = raw.Substring(lastIndex);
+                    if (!string.IsNullOrEmpty(remain))
+                    {
+                        segments.Add(new MessageSegment("text") { Data = new Dictionary<string, object> { { "text", remain } } });
+                        displayText += remain;
+                    }
+                }
+                
+                if (segments.Count == 0)
+                {
+                    segments.Add(new MessageSegment("text") { Data = new Dictionary<string, object> { { "text", raw } } });
+                    displayText = raw;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ParseCQMessageForCache 失败: {ex.Message}");
+                // 失败时返回基本的文本段
+                segments.Add(new MessageSegment("text") { Data = new Dictionary<string, object> { { "text", raw } } });
+                displayText = raw;
             }
         }
         #endregion

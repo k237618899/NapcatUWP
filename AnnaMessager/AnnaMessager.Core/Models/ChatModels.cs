@@ -238,6 +238,8 @@ namespace AnnaMessager.Core.Models
         private string _replySummary;
         private long _replyTargetId;
         private bool _isPreview;
+        private string _rawMessage;              // 新增: 原始 CQ 字串
+        private string _richSegmentsSerialized;  // 新增: 序列化 JSON (可選)
 
         public MessageItem()
         {
@@ -276,6 +278,11 @@ namespace AnnaMessager.Core.Models
         public bool HasReply => !string.IsNullOrEmpty(ReplySummary);
         public long ReplyTargetId { get => _replyTargetId; set => SetProperty(ref _replyTargetId, value); }
         public bool IsPreview { get => _isPreview; set => SetProperty(ref _isPreview, value); }
+
+        // 新增: 原始 CQ 字串屬性 (供重新解析 RichSegments)
+        public string RawMessage { get => _rawMessage; set => SetProperty(ref _rawMessage, value); }
+        // 新增: 序列化後的 segments (目前僅預留，尚未在載入時使用)
+        public string RichSegmentsSerialized { get => _richSegmentsSerialized; set => SetProperty(ref _richSegmentsSerialized, value); }
 
         // 衍生屬性
         public string DisplayTime => Time.ToString("HH:mm");

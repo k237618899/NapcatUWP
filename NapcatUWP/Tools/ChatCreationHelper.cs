@@ -7,6 +7,8 @@ using Windows.UI.Core;
 using NapcatUWP.Controls;
 using NapcatUWP.Models;
 using NapcatUWP.Pages;
+using MvvmCross.Platform; // 新增: 取得 MainViewModel
+using AnnaMessager.Core.ViewModels; // 新增: 取用 ChatListViewModel
 
 namespace NapcatUWP.Tools
 {
@@ -61,6 +63,14 @@ namespace NapcatUWP.Tools
 
                 // 添加到聊天列表緩存
                 DataAccess.AddChatToCache(currentAccount, chatItem);
+
+                // 新增: 即時更新 MvvmCross ChatListViewModel
+                try
+                {
+                    var mainVm = Mvx.TryResolve<MainViewModel>();
+                    mainVm?.ChatListViewModel?.AddOrUpdateChat(friendInfo.UserId, false, friendInfo.Nickname ?? friendInfo.UserId.ToString());
+                }
+                catch (Exception exVm) { Debug.WriteLine("同步 ChatListViewModel 失敗: " + exVm.Message); }
 
                 // 如果是新聊天，請求歷史消息
                 await RequestFriendHistoryMessages(friendInfo.UserId, webSocketClient, mainView);
@@ -124,6 +134,14 @@ namespace NapcatUWP.Tools
 
                 // 添加到聊天列表緩存
                 DataAccess.AddChatToCache(currentAccount, chatItem);
+
+                // 新增: 即時更新 ChatListViewModel
+                try
+                {
+                    var mainVm = Mvx.TryResolve<MainViewModel>();
+                    mainVm?.ChatListViewModel?.AddOrUpdateChat(groupInfo.GroupId, true, groupInfo.GroupName ?? groupInfo.GroupId.ToString());
+                }
+                catch (Exception exVm) { Debug.WriteLine("同步群組到 ChatListViewModel 失敗: " + exVm.Message); }
 
                 // 如果是新聊天，請求歷史消息
                 await RequestGroupHistoryMessages(groupInfo.GroupId, webSocketClient, mainView);

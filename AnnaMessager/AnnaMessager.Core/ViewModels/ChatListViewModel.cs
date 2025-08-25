@@ -157,7 +157,11 @@ namespace AnnaMessager.Core.ViewModels
                     string resolvedName = rc.IsGroup
                         ? await ResolveGroupNameAsync(rc.PeerId, "群聊")
                         : await ResolveFriendNameAsync(rc.PeerId, "用戶" + rc.PeerId);
-                    var summarized = SummarizeMessage(rc.LastMessage ?? string.Empty);
+                    
+                    // 修复：使用原始 CQ 码进行消息摘要处理
+                    var originalMessage = rc.LastMessage ?? string.Empty;
+                    var summarized = SummarizeMessage(originalMessage);
+                    
                     RunOnUI(() =>
                     {
                         lock (_chatListLock)
@@ -173,7 +177,7 @@ namespace AnnaMessager.Core.ViewModels
                                     LastMessage = summarized,
                                     LastMessageTime = baseTime,
                                     LastTime = baseTime,
-                                    LastMessageType = DetectMessageType(rc.LastMessage ?? string.Empty).ToString(),
+                                    LastMessageType = DetectMessageType(originalMessage).ToString(),
                                     AvatarUrl = rc.IsGroup ? $"https://p.qlogo.cn/gh/{rc.PeerId}/{rc.PeerId}/640/" : $"https://q1.qlogo.cn/g?b=qq&nk={rc.PeerId}&s=640"
                                 };
                                 ChatList.Add(chat);
@@ -186,7 +190,7 @@ namespace AnnaMessager.Core.ViewModels
                                 existing.LastMessage = summarized;
                                 existing.LastMessageTime = baseTime;
                                 existing.LastTime = baseTime;
-                                existing.LastMessageType = DetectMessageType(rc.LastMessage ?? existing.LastMessage).ToString();
+                                existing.LastMessageType = DetectMessageType(originalMessage).ToString();
                                 Task.Run(() => _cacheManager.CacheChatItemAsync(existing));
                                 ReorderChat(existing); // 差量重排
                                 addedOrUpdated = true;
@@ -210,7 +214,9 @@ namespace AnnaMessager.Core.ViewModels
                 var isGroup = e.Message.GroupId.HasValue;
                 var chatId = isGroup ? e.Message.GroupId.Value : e.Message.UserId;
                 if (chatId == 0) return;
-                var textSummaryRaw = e.Message.Message;
+                
+                // 修复：优先使用 RawMessage，如果为空则使用 Message
+                var textSummaryRaw = !string.IsNullOrEmpty(e.Message.RawMessage) ? e.Message.RawMessage : e.Message.Message;
                 var summarized = SummarizeMessage(textSummaryRaw);
                 var serverTime = e.Message.DateTime == default ? DateTime.Now : e.Message.DateTime;
                 var fromSelf = e.Message.Sender?.UserId == e.Message.SelfId;
@@ -223,6 +229,7 @@ namespace AnnaMessager.Core.ViewModels
                     var messageItem = new MessageItem
                     {
                         MessageId = e.Message.MessageId != 0 ? e.Message.MessageId : DateTime.Now.Ticks,
+                        RawMessage = textSummaryRaw, // 修复：保存原始 CQ 字串供聊天視圖重建 RichSegments
                         Content = summarized,
                         Time = serverTime,
                         IsFromSelf = fromSelf,
